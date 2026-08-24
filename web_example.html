@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hero Voice — ตัวอย่างเว็บเลือกเสียง</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+  h1 { font-size: 1.4rem; }
+  .voice { border: 1px solid #ddd; border-radius: 10px; padding: 12px 16px; margin: 10px 0;
+           display: flex; align-items: center; gap: 12px; cursor: pointer; }
+  .voice.selected { border-color: #4f46e5; background: #eef2ff; }
+  .voice .info { flex: 1; }
+  .voice .desc { color: #666; font-size: .9rem; }
+  audio { height: 34px; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 90px; padding: 10px;
+             border-radius: 8px; border: 1px solid #ccc; font: inherit; }
+  button { background: #4f46e5; color: #fff; border: 0; padding: 10px 20px;
+           border-radius: 8px; font-size: 1rem; cursor: pointer; margin-top: 10px; }
+  button:disabled { opacity: .5; cursor: default; }
+  #result { margin-top: 16px; }
+</style>
+</head>
+<body>
+<h1>🎙️ Hero Voice — เลือกเสียง แล้วพิมพ์ข้อความ</h1>
+
+<!-- 0) API key (ถ้า server เปิด auth) -->
+<input id="apikey" type="text" placeholder="X-API-Key (ถ้ามี)"
+       style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #ccc;border-radius:8px;margin-bottom:12px">
+
+<!-- 1) รายการเสียง + preview -->
+<div id="voices">กำลังโหลดเสียง…</div>
+
+<!-- 2) พิมพ์ script -->
+<h3>ข้อความ (script)</h3>
+<textarea id="script" placeholder="พิมพ์ข้อความที่ต้องการให้พูด…">สวัสดีครับ ยินดีต้อนรับ</textarea>
+
+<!-- 3) ส่งไป generate -->
+<button id="go" disabled>สร้างเสียง</button>
+
+<div id="result"></div>
+
+<script>
+// ⬇️ เปลี่ยนเป็น URL ของ server จริงตอน deploy
+const API = "http://localhost:8000";
+
+// แนบ X-API-Key ให้ทุก request ถ้ากรอกไว้
+function authHeaders(extra = {}) {
+  const key = document.getElementById("apikey").value.trim();
+  return key ? { ...extra, "X-API-Key": key } : extra;
+}
+
+let selectedVoice = null;
+
+// 1) ดึงรายการเสียง + แสดง preview (ใช้ preview_url ที่ API ส่งมา)
+async function loadVoices() {
+  const res = await fetch(`${API}/voices`, { headers: authHeaders() });
+  const voices = await res.json();
+  const box = document.getElementById("voices");
+  box.innerHTML = "";
+  voices.forEach(v => {
+    const el = document.createElement("div");
+    el.className = "voice";
+    el.innerHTML = `
+      <div class="info">
+        <div><b>${v.voice_id}</b></div>
+        <div class="desc">${v.desc || v.instruct || ""}</div>
+      </div>
+      <audio controls preload="none" src="${v.preview_url}"></audio>
+    `;
+    // คลิกที่การ์ด (ยกเว้นตอนกดปุ่มเล่น) = เลือกเสียงนี้
+    el.addEventListener("click", e => {
+      if (e.target.tagName === "AUDIO") return;
+      document.querySelectorAll(".voice").forEach(x => x.classList.remove("selected"));
+      el.classList.add("selected");
+      selectedVoice = v.voice_id;
+      document.getElementById("go").disabled = false;
+    });
+    box.appendChild(el);
+  });
+}
+
+// 3) ส่ง script + ชื่อเสียง -> รับเสียงกลับ (base64) -> เล่น + ให้ดาวน์โหลด
+async function generate() {
+  const text = document.getElementById("script").value.trim();
+  if (!selectedVoice || !text) return;
+  const btn = document.getElementById("go");
+  btn.disabled = true; btn.textContent = "กำลังสร้าง…";
+
+  const res = await fetch(`${API}/tts`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ voice_id: selectedVoice, text })
+  });
+
+  btn.disabled = false; btn.textContent = "สร้างเสียง";
+  if (!res.ok) { alert("เกิดข้อผิดพลาด: " + await res.text()); return; }
+
+  const data = await res.json();
+  // แปลง base64 -> blob url
+  const bytes = Uint8Array.from(atob(data.audio_base64), c => c.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+  document.getElementById("result").innerHTML = `
+    <p>เสียง <b>${data.voice_id}</b> · ยาว ${data.duration}s · สร้างใน ${data.generation_time}s</p>
+    <audio controls autoplay src="${url}"></audio>
+    <p><a href="${url}" download="tts_${data.voice_id}.wav">⬇️ ดาวน์โหลด</a></p>
+  `;
+}
+
+document.getElementById("go").addEventListener("click", generate);
+loadVoices();
+</script>
+</body>
+</html>

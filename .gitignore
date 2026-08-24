@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual envs
+venv/
+venv_*/
+.venv/
+
+# Model weights (โหลดแยก — ใหญ่เกินจะ commit)
+model/
+model_dl/
+
+# Runtime data
+logs/
+*.log
+credits.db
+credits.db-*
+saved_outputs/
+custom_voices/
+test_outputs/
+
+# Audio artifacts (เก็บเฉพาะ voices/ ที่ build ไว้)
+/*.wav
+out.wav
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Packaging artifacts
+*.zip
+test_handler_*.wav
+__pycache__/

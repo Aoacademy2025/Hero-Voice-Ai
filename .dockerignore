@@ -1,0 +1,15 @@
+venv/
+model_dl/
+__pycache__/
+*.pyc
+*.log
+*.wav
+!voices/*.wav
+.git/
+.vscode/
+tts.py
+client_example.py
+api_out_*.wav
+custom_voices/
+credits.db
+credits.db-*

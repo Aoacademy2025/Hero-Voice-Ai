@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hero Voice Studio</title>
+<style>
+  :root {
+    --bg:#0f1117; --panel:#171a23; --panel2:#1e222d; --border:#2a2f3d;
+    --text:#e7e9ee; --muted:#9aa1b1; --accent:#6d5efc; --accent2:#a855f7;
+    --ok:#22c55e; --err:#ef4444; --radius:12px;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.5; }
+  header { display:flex; align-items:center; gap:12px; padding:16px 24px;
+           border-bottom:1px solid var(--border); position:sticky; top:0;
+           background:rgba(15,17,23,.85); backdrop-filter:blur(8px); z-index:10; }
+  header h1 { font-size:1.15rem; margin:0; font-weight:700; }
+  header .logo { width:34px;height:34px;border-radius:9px;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    display:grid;place-items:center;font-size:18px; }
+  header .spacer { flex:1; }
+  .dot { width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block;margin-right:6px; }
+  .dot.ok{background:var(--ok);} .dot.err{background:var(--err);}
+  .wrap { max-width:960px; margin:0 auto; padding:24px; }
+  .config { display:grid; grid-template-columns:1fr 1fr auto; gap:10px; margin-bottom:20px;
+            background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:14px; }
+  label { font-size:.8rem; color:var(--muted); display:block; margin-bottom:4px; }
+  input,select,textarea,button { font:inherit; color:var(--text); }
+  input,select,textarea { width:100%; background:var(--panel2); border:1px solid var(--border);
+    border-radius:9px; padding:9px 11px; outline:none; }
+  input:focus,select:focus,textarea:focus { border-color:var(--accent); }
+  textarea { min-height:110px; resize:vertical; }
+  .tabs { display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
+  .tab { padding:9px 16px; border-radius:9px; background:var(--panel); border:1px solid var(--border);
+         cursor:pointer; font-size:.92rem; color:var(--muted); }
+  .tab.active { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+           padding:18px; display:none; }
+  .panel.active { display:block; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+  .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:12px; }
+  .field { margin-top:12px; }
+  button.primary { background:linear-gradient(135deg,var(--accent),var(--accent2)); border:0;
+    color:#fff; font-weight:600; padding:11px 22px; border-radius:9px; cursor:pointer; margin-top:14px; }
+  button.primary:disabled { opacity:.5; cursor:default; }
+  button.ghost { background:var(--panel2); border:1px solid var(--border); padding:7px 12px;
+    border-radius:8px; cursor:pointer; font-size:.85rem; }
+  button.danger { color:#fff; background:var(--err); border:0; padding:6px 12px; border-radius:8px; cursor:pointer; font-size:.8rem; }
+  .hint { font-size:.8rem; color:var(--muted); margin-top:6px; }
+  .result { margin-top:16px; padding:14px; background:var(--panel2); border-radius:9px; display:none; }
+  .result.show { display:block; }
+  audio { width:100%; margin-top:8px; }
+  .voicecard { display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--panel2);
+    border:1px solid var(--border); border-radius:9px; margin-top:8px; }
+  .voicecard .info { flex:1; min-width:0; }
+  .voicecard .name { font-weight:600; }
+  .voicecard .sub { font-size:.8rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--panel2);
+    border:1px solid var(--border); padding:11px 18px; border-radius:10px; opacity:0; transition:.3s; pointer-events:none; }
+  .toast.show { opacity:1; }
+  .toast.err { border-color:var(--err); }
+  .switch { display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:.9rem; }
+  .badge { font-size:.72rem; padding:2px 8px; border-radius:20px; background:var(--panel2); border:1px solid var(--border); color:var(--muted); }
+  .stream-log { margin-top:10px; font-size:.82rem; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🎙️</div>
+  <h1>Hero Voice Studio</h1>
+  <span class="spacer"></span>
+  <span id="health"><span class="dot"></span><span id="healthText">กำลังเชื่อมต่อ…</span></span>
+  <span id="credits" class="badge" style="margin-left:10px;display:none"></span>
+</header>
+
+<div class="wrap">
+  <!-- config -->
+  <div class="config">
+    <div><label>API Base URL</label><input id="apiBase" placeholder="http://localhost:8000"></div>
+    <div><label>API Key (X-API-Key)</label><input id="apiKey" placeholder="เว้นว่างได้ถ้า server ไม่บังคับ"></div>
+    <div style="display:flex;align-items:flex-end"><button class="ghost" onclick="saveConfig()" style="width:100%">บันทึก & เชื่อมต่อ</button></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="tts">🗣️ สร้างเสียง</div>
+    <div class="tab" data-tab="design">🎨 ออกแบบเสียง</div>
+    <div class="tab" data-tab="clone">🧬 โคลนเสียง</div>
+    <div class="tab" data-tab="transcribe">✍️ ถอดเสียง</div>
+  </div>
+
+  <!-- TTS -->
+  <div class="panel active" id="tab-tts">
+    <div class="field"><label>ข้อความ</label>
+      <textarea id="ttsText" placeholder="พิมพ์ข้อความที่ต้องการให้พูด…">สวัสดีครับ ยินดีต้อนรับสู่ Hero Voice</textarea></div>
+    <div class="row">
+      <div><label>เอนจิน</label><select id="ttsEngine"></select></div>
+      <div id="emotionField" style="display:none"><label>อารมณ์ (emotion)</label>
+        <input id="ttsEmotion" placeholder="เช่น happy, sad, angry, excited"></div>
+    </div>
+    <div class="row3">
+      <div><label>เสียง</label><select id="ttsVoice"></select></div>
+      <div><label>ภาษา</label><select id="ttsLang">
+        <option value="">อัตโนมัติ</option><option>Thai</option><option>English</option>
+        <option>Chinese</option><option>Japanese</option></select></div>
+      <div><label>ความเร็ว <span id="ttsSpeedV">1.0</span>x</label>
+        <input type="range" id="ttsSpeed" min="0.5" max="2" step="0.05" value="1"></div>
+    </div>
+    <div class="row3">
+      <div><label>คุณภาพ (num_step) <span id="ttsStepV">24</span></label>
+        <input type="range" id="ttsStep" min="4" max="48" step="1" value="24"></div>
+      <div><label>ความคล้าย (guidance) <span id="ttsGuideV">2.0</span></label>
+        <input type="range" id="ttsGuide" min="1" max="4" step="0.5" value="2"></div>
+      <div style="display:flex;align-items:flex-end;flex-direction:column;gap:4px">
+        <label class="switch"><input type="checkbox" id="ttsStream"> Streaming (ทยอยเล่น)</label>
+        <label class="switch"><input type="checkbox" id="ttsMixed" checked> แยกภาษาไทย-อังกฤษ</label></div>
+    </div>
+    <p class="hint">อังกฤษเพี้ยน? เปิด "แยกภาษาไทย-อังกฤษ" ไว้ · โคลนไม่คล้าย? เพิ่ม guidance 3–3.5 + num_step 32 · เสียงเพี้ยน = ลด guidance</p>
+    <button class="primary" id="ttsGo" onclick="doTTS()">สร้างเสียง</button>
+    <div class="stream-log" id="ttsStreamLog"></div>
+    <div class="result" id="ttsResult"></div>
+  </div>
+
+  <!-- Voice design -->
+  <div class="panel" id="tab-design">
+    <p class="hint">ออกแบบเสียงจากคำบรรยาย (ไม่ใช้เสียงสต็อก) — OmniVoice รองรับ เพศ/อายุ/pitch/whisper/สำเนียง (ไม่มีอารมณ์)</p>
+    <div class="row3">
+      <div><label>เพศ</label><select id="dGender"><option value="">-</option><option>male</option><option>female</option></select></div>
+      <div><label>อายุ</label><select id="dAge"><option value="">-</option><option>child</option><option>teenager</option><option>young adult</option><option>middle-aged</option><option>elderly</option></select></div>
+      <div><label>โทนเสียง (pitch)</label><select id="dPitch"><option value="">-</option><option>very low pitch</option><option>low pitch</option><option>moderate pitch</option><option>high pitch</option><option>very high pitch</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>สำเนียง</label><select id="dAccent"><option value="">-</option><option>american accent</option><option>british accent</option><option>australian accent</option><option>indian accent</option></select></div>
+      <div style="display:flex;align-items:flex-end"><label class="switch"><input type="checkbox" id="dWhisper"> กระซิบ (whisper)</label></div>
+    </div>
+    <div class="field"><label>instruct ที่จะส่ง</label><input id="dInstruct" readonly></div>
+    <div class="field"><label>ข้อความ</label><textarea id="dText">Hello, this is a designed voice.</textarea></div>
+    <button class="primary" id="dGo" onclick="doDesign()">สร้างเสียง</button>
+    <div class="result" id="dResult"></div>
+  </div>
+
+  <!-- Clone -->
+  <div class="panel" id="tab-clone">
+    <p class="hint">อัปโหลดไฟล์เสียง 3–10 วิ → เก็บเป็นเสียงโคลนถาวร ใช้ซ้ำได้ (เว้น ref_text ไว้ = ถอดอัตโนมัติ)</p>
+    <div class="row">
+      <div><label>ไฟล์เสียงตัวอย่าง</label><input type="file" id="clFile" accept="audio/*"></div>
+      <div><label>ชื่อเสียง</label><input id="clName" placeholder="เช่น เสียงพี่ก้อง"></div>
+    </div>
+    <div class="field"><label>ref_text (เว้นว่าง = ถอดอัตโนมัติด้วย ASR)</label><input id="clRefText" placeholder="ข้อความที่พูดในไฟล์"></div>
+    <button class="primary" id="clGo" onclick="createVoice()">สร้างเสียงโคลนถาวร</button>
+    <h3 style="margin-top:24px">เสียงโคลนของฉัน</h3>
+    <div id="myVoices"><p class="hint">— ยังไม่มี —</p></div>
+  </div>
+
+  <!-- Transcribe -->
+  <div class="panel" id="tab-transcribe">
+    <p class="hint">ถอดไฟล์เสียงเป็นข้อความ (Whisper) — ครั้งแรกโหลดโมเดล ~1.5GB อาจช้า</p>
+    <div class="field"><label>ไฟล์เสียง</label><input type="file" id="trFile" accept="audio/*"></div>
+    <button class="primary" id="trGo" onclick="doTranscribe()">ถอดเสียง</button>
+    <div class="result" id="trResult"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── config / storage ──
+let API = localStorage.getItem("hv_api") || location.origin;
+let KEY = localStorage.getItem("hv_key") || "";
+document.getElementById("apiBase").value = API;
+document.getElementById("apiKey").value = KEY;
+
+function headers(json) {
+  const h = {};
+  if (json) h["Content-Type"] = "application/json";
+  if (KEY) h["X-API-Key"] = KEY;
+  return h;
+}
+function saveConfig() {
+  API = document.getElementById("apiBase").value.trim().replace(/\/$/, "") || location.origin;
+  KEY = document.getElementById("apiKey").value.trim();
+  localStorage.setItem("hv_api", API); localStorage.setItem("hv_key", KEY);
+  toast("บันทึกแล้ว");
+  init();
+}
+function toast(msg, isErr) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.className = "toast show" + (isErr ? " err" : "");
+  setTimeout(() => t.className = "toast", 2600);
+}
+
+// ── tabs ──
+function activateTab(name) {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.tab===name));
+  document.querySelectorAll(".panel").forEach(x => x.classList.remove("active"));
+  document.getElementById("tab-" + name).classList.add("active");
+}
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => activateTab(t.dataset.tab));
+
+// ── sliders ──
+const bind = (s, out, suf="") => { const el=document.getElementById(s), o=document.getElementById(out);
+  el.oninput = () => o.textContent = el.value + suf; };
+bind("ttsSpeed","ttsSpeedV"); bind("ttsStep","ttsStepV"); bind("ttsGuide","ttsGuideV");
+
+// ── voice design instruct builder ──
+function buildInstruct() {
+  const parts = [];
+  ["dGender","dAge","dPitch","dAccent"].forEach(id => { const v=document.getElementById(id).value; if(v) parts.push(v); });
+  if (document.getElementById("dWhisper").checked) parts.push("whisper");
+  const s = parts.join(", ");
+  document.getElementById("dInstruct").value = s;
+  return s;
+}
+["dGender","dAge","dPitch","dAccent","dWhisper"].forEach(id =>
+  document.getElementById(id).addEventListener("change", buildInstruct));
+
+// ── health + voices ──
+async function init() {
+  try {
+    const h = await fetch(`${API}/health`).then(r => r.json());
+    document.querySelector("#health .dot").className = "dot " + (h.status==="ok"?"ok":"err");
+    document.getElementById("healthText").textContent =
+      `${h.status} · ${h.device||"?"} · ${h.num_voices} เสียง`;
+    if (h.credits_enabled) loadCredits();
+  } catch(e) {
+    document.querySelector("#health .dot").className = "dot err";
+    document.getElementById("healthText").textContent = "เชื่อมต่อไม่ได้";
+    return;
+  }
+  loadEngines();
+  loadVoices();
+}
+async function loadEngines() {
+  const sel = document.getElementById("ttsEngine");
+  try {
+    const engs = await fetch(`${API}/engines`, {headers:headers()}).then(r=>r.json());
+    sel.innerHTML = "";
+    window._engEmotion = {};
+    engs.forEach(e => {
+      sel.appendChild(new Option(`${e.name}${e.supports_emotion?" (มีอารมณ์)":""}`, e.id));
+      window._engEmotion[e.id] = e.supports_emotion;
+    });
+    sel.onchange = () => {
+      document.getElementById("emotionField").style.display =
+        window._engEmotion[sel.value] ? "block" : "none";
+    };
+    sel.onchange();
+  } catch(e){}
+}
+async function loadCredits() {
+  try {
+    const m = await fetch(`${API}/me`, {headers:headers()}).then(r=>r.json());
+    if (m.credits_enabled) {
+      const b = document.getElementById("credits");
+      b.style.display = "inline-block";
+      b.textContent = m.unlimited ? "unlimited" : `${m.credits?.toFixed(1)} credits`;
+    }
+  } catch(e){}
+}
+async function loadVoices() {
+  const sel = document.getElementById("ttsVoice");
+  sel.innerHTML = "";
+  try {
+    const stock = await fetch(`${API}/voices`, {headers:headers()}).then(r=>r.json());
+    const g1 = document.createElement("optgroup"); g1.label = "เสียงสต็อก";
+    stock.forEach(v => g1.appendChild(new Option(`${v.voice_id} — ${v.desc||v.instruct||""}`, v.voice_id)));
+    sel.appendChild(g1);
+  } catch(e){ toast("โหลดเสียงไม่ได้: "+e.message, true); }
+  try {
+    const mine = await fetch(`${API}/voices/mine`, {headers:headers()}).then(r=>r.json());
+    if (mine.length) {
+      const g2 = document.createElement("optgroup"); g2.label = "เสียงโคลนของฉัน";
+      mine.forEach(v => g2.appendChild(new Option(`${v.name||v.voice_id} (โคลน)`, v.voice_id)));
+      sel.appendChild(g2);
+    }
+    renderMyVoices(mine);
+  } catch(e){}
+}
+function renderMyVoices(mine) {
+  const box = document.getElementById("myVoices");
+  if (!mine || !mine.length) { box.innerHTML = '<p class="hint">— ยังไม่มี —</p>'; return; }
+  box.innerHTML = "";
+  mine.forEach(v => {
+    const el = document.createElement("div");
+    el.className = "voicecard";
+    el.innerHTML = `<div class="info"><div class="name">${v.name||v.voice_id}</div>
+      <div class="sub">${v.voice_id} · ${v.ref_text||""}</div></div>
+      <audio controls preload="none" src="${v.preview_url}"></audio>
+      <button class="ghost use">ใช้เสียงนี้ →</button>
+      <button class="danger del">ลบ</button>`;
+    el.querySelector(".use").onclick = () => useVoice(v.voice_id, v.name);
+    el.querySelector(".del").onclick = () => delVoice(v.voice_id);
+    box.appendChild(el);
+  });
+}
+
+// ── audio helpers ──
+function b64ToBlobUrl(b64, type="audio/wav") {
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return URL.createObjectURL(new Blob([bytes], {type}));
+}
+function showAudio(container, url, meta) {
+  const el = document.getElementById(container);
+  el.className = "result show";
+  el.innerHTML = `<div class="hint">${meta||""}</div>
+    <audio controls autoplay src="${url}"></audio>
+    <p><a href="${url}" download="hero_voice.wav" style="color:var(--accent)">⬇️ ดาวน์โหลด</a></p>`;
+}
+
+// ── TTS ──
+async function doTTS() {
+  const text = document.getElementById("ttsText").value.trim();
+  const voice_id = document.getElementById("ttsVoice").value;
+  if (!text || !voice_id) return toast("กรอกข้อความ + เลือกเสียง", true);
+  const body = { text, voice_id,
+    engine: document.getElementById("ttsEngine").value || "omnivoice",
+    emotion: document.getElementById("ttsEmotion").value.trim() || null,
+    language: document.getElementById("ttsLang").value || null,
+    speed: parseFloat(document.getElementById("ttsSpeed").value),
+    num_step: parseInt(document.getElementById("ttsStep").value),
+    guidance_scale: parseFloat(document.getElementById("ttsGuide").value),
+    mixed_language: document.getElementById("ttsMixed").checked };
+  const btn = document.getElementById("ttsGo");
+  btn.disabled = true; btn.textContent = "กำลังสร้าง…";
+  document.getElementById("ttsStreamLog").textContent = "";
+  try {
+    // โหมดแยกภาษาใช้ /tts เท่านั้น (streaming ยังไม่รองรับ)
+    if (document.getElementById("ttsStream").checked && !body.mixed_language) await ttsStream(body);
+    else await ttsOnce(body);
+  } catch(e) { toast(e.message, true); }
+  btn.disabled = false; btn.textContent = "สร้างเสียง";
+}
+async function ttsOnce(body) {
+  const res = await fetch(`${API}/tts`, {method:"POST", headers:headers(true), body:JSON.stringify(body)});
+  if (!res.ok) throw new Error(await res.text());
+  const d = await res.json();
+  showAudio("ttsResult", b64ToBlobUrl(d.audio_base64),
+    `ยาว ${d.duration}s · สร้างใน ${d.generation_time}s · หัก ${d.credits_charged} credits`);
+  loadCredits();
+}
+// เล่นเสียง streaming ทีละก้อนแบบต่อคิว
+async function ttsStream(body) {
+  const res = await fetch(`${API}/tts/stream`, {method:"POST", headers:headers(true), body:JSON.stringify(body)});
+  if (!res.ok) throw new Error(await res.text());
+  const log = document.getElementById("ttsStreamLog");
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = "", queue = [], playing = false;
+  const playNext = () => {
+    if (!queue.length) { playing = false; return; }
+    playing = true;
+    const a = new Audio(queue.shift());
+    a.onended = playNext; a.play();
+  };
+  while (true) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, {stream:true});
+    const events = buf.split("\n\n"); buf = events.pop();
+    for (const line of events) {
+      if (!line.startsWith("data: ")) continue;
+      const evt = JSON.parse(line.slice(6));
+      if (evt.done) { log.textContent = `เสร็จ · รวม ${evt.total_duration}s · หัก ${evt.credits_charged} credits`; loadCredits(); continue; }
+      log.textContent = `กำลังเล่นก้อน ${evt.index+1}/${evt.total}…`;
+      queue.push(b64ToBlobUrl(evt.audio_base64));
+      if (!playing) playNext();
+    }
+  }
+}
+
+// ── Voice design ──
+async function doDesign() {
+  const instruct = buildInstruct();
+  const text = document.getElementById("dText").value.trim();
+  if (!instruct) return toast("เลือกอย่างน้อย 1 อย่าง (เพศ/อายุ/…)", true);
+  if (!text) return toast("กรอกข้อความ", true);
+  const btn = document.getElementById("dGo"); btn.disabled=true; btn.textContent="กำลังสร้าง…";
+  try {
+    const res = await fetch(`${API}/tts`, {method:"POST", headers:headers(true),
+      body:JSON.stringify({text, instruct})});
+    if (!res.ok) throw new Error(await res.text());
+    const d = await res.json();
+    showAudio("dResult", b64ToBlobUrl(d.audio_base64), `instruct: ${instruct} · ยาว ${d.duration}s`);
+    loadCredits();
+  } catch(e){ toast(e.message, true); }
+  btn.disabled=false; btn.textContent="สร้างเสียง";
+}
+
+// ── Clone (persistent) ──
+async function createVoice() {
+  const f = document.getElementById("clFile").files[0];
+  if (!f) return toast("เลือกไฟล์เสียงก่อน", true);
+  const fd = new FormData();
+  fd.append("ref_audio", f);
+  fd.append("name", document.getElementById("clName").value);
+  const rt = document.getElementById("clRefText").value.trim();
+  if (rt) fd.append("ref_text", rt);
+  const btn = document.getElementById("clGo"); btn.disabled=true; btn.textContent="กำลังสร้าง (อาจถอดเสียงก่อน)…";
+  try {
+    const res = await fetch(`${API}/voices`, {method:"POST", headers:headers(), body:fd});
+    if (!res.ok) throw new Error(await res.text());
+    const d = await res.json();
+    toast(`สร้างเสียง ${d.voice_id} แล้ว`);
+    document.getElementById("clFile").value=""; document.getElementById("clName").value=""; document.getElementById("clRefText").value="";
+    loadVoices();
+  } catch(e){ toast(e.message, true); }
+  btn.disabled=false; btn.textContent="สร้างเสียงโคลนถาวร";
+}
+// ดึงเสียงโคลนไปใช้ทันที: เลือกใน dropdown + เด้งไปแท็บสร้างเสียง
+function useVoice(id, name) {
+  const sel = document.getElementById("ttsVoice");
+  if (![...sel.options].some(o => o.value === id)) { toast("ไม่พบเสียงใน dropdown ลองรีเฟรช", true); return; }
+  sel.value = id;
+  activateTab("tts");
+  document.getElementById("ttsText").focus();
+  window.scrollTo({top:0, behavior:"smooth"});
+  toast(`เลือก "${name||id}" แล้ว — พิมพ์ข้อความแล้วกดสร้างเสียง`);
+}
+async function delVoice(id) {
+  if (!confirm(`ลบเสียง ${id}?`)) return;
+  try {
+    const res = await fetch(`${API}/voices/${id}`, {method:"DELETE", headers:headers()});
+    if (!res.ok) throw new Error(await res.text());
+    toast("ลบแล้ว"); loadVoices();
+  } catch(e){ toast(e.message, true); }
+}
+
+// ── Transcribe ──
+async function doTranscribe() {
+  const f = document.getElementById("trFile").files[0];
+  if (!f) return toast("เลือกไฟล์เสียงก่อน", true);
+  const fd = new FormData(); fd.append("audio", f);
+  const btn = document.getElementById("trGo"); btn.disabled=true; btn.textContent="กำลังถอด…";
+  try {
+    const res = await fetch(`${API}/transcribe`, {method:"POST", headers:headers(), body:fd});
+    if (!res.ok) throw new Error(await res.text());
+    const d = await res.json();
+    const el = document.getElementById("trResult"); el.className="result show";
+    el.innerHTML = `<div class="hint">ผลถอดเสียง:</div><p>${d.text||"(ว่าง)"}</p>`;
+  } catch(e){ toast(e.message, true); }
+  btn.disabled=false; btn.textContent="ถอดเสียง";
+}
+
+buildInstruct();
+init();
+</script>
+</body>
+</html>

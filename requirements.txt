@@ -1,0 +1,22 @@
+# OmniVoice TTS API — dependencies
+# หมายเหตุ: ไม่ใส่ torch/torchaudio ไว้ที่นี่โดยตั้งใจ — ต้องติดตั้งคู่กันจาก
+#   index เดียวกัน (CUDA หรือ CPU) ก่อนไฟล์นี้ ไม่งั้น pip จะ resolve เวอร์ชันที่
+#   ABI ไม่ตรงกัน (เจอ error "undefined symbol: aoti_torch_abi_version")
+#   ดู Dockerfile / Dockerfile.cpu หรือ https://pytorch.org
+transformers>=5.3.0
+accelerate
+soundfile
+librosa
+pydub
+numpy
+
+# API server
+fastapi
+uvicorn[standard]
+
+# วัดความคล้ายเสียง (speaker similarity) สำหรับ /clone best-of-N — ใช้ torch ที่มีอยู่แล้ว
+# ไม่ต้องติดตั้ง torch เพิ่ม (--no-deps ตอน dev เพื่อกัน pip แตะ torch หลัก)
+resemblyzer
+webrtcvad
+
+# ติดตั้งตัวแพ็กเกจ omnivoice เอง (จากโฟลเดอร์ OmniVoice/) — ดู Dockerfile

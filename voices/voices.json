@@ -1,0 +1,338 @@
+[
+  {
+    "id": "voice_01",
+    "desc": "เสียงผู้ชาย โทนปกติ",
+    "instruct": "male",
+    "ref_audio": "voice_01.wav",
+    "ref_text": "สวัสดีครับ ยินดีต้อนรับเข้าสู่บริการของเรา"
+  },
+  {
+    "id": "voice_02",
+    "desc": "เสียงผู้หญิง โทนปกติ",
+    "instruct": "female",
+    "ref_audio": "voice_02.wav",
+    "ref_text": "สวัสดีค่ะ ยินดีให้บริการนะคะ"
+  },
+  {
+    "id": "voice_03",
+    "desc": "เสียงผู้ชาย โทนสูง สดใส",
+    "instruct": "male, high pitch",
+    "ref_audio": "voice_03.wav",
+    "ref_text": "วันนี้เป็นวันที่ดีมากเลยนะครับ"
+  },
+  {
+    "id": "voice_04",
+    "desc": "เสียงผู้หญิง โทนต่ำ นุ่มนวล",
+    "instruct": "female, low pitch",
+    "ref_audio": "voice_04.wav",
+    "ref_text": "ขอบคุณที่ใช้บริการของเรานะคะ"
+  },
+  {
+    "id": "voice_05",
+    "desc": "เสียงผู้ชาย โทนต่ำมาก หนักแน่น",
+    "instruct": "male, very low pitch",
+    "ref_audio": "voice_05.wav",
+    "ref_text": "ขอเชิญรับฟังประกาศสำคัญครับ"
+  },
+  {
+    "id": "voice_06",
+    "desc": "เสียงผู้หญิง โทนสูงมาก สดใส",
+    "instruct": "female, very high pitch",
+    "ref_audio": "voice_06.wav",
+    "ref_text": "หวัดดีค่ะ วันนี้มีอะไรให้ช่วยไหมคะ"
+  },
+  {
+    "id": "voice_07",
+    "desc": "เสียงเด็ก",
+    "instruct": "child",
+    "ref_audio": "voice_07.wav",
+    "ref_text": "สวัสดีครับ ผมชื่อน้องพลอยนะครับ"
+  },
+  {
+    "id": "voice_08",
+    "desc": "เสียงวัยรุ่นหญิง",
+    "instruct": "teenager, female",
+    "ref_audio": "voice_08.wav",
+    "ref_text": "หวัดดีค่ะ วันนี้อากาศดีจังเลย"
+  },
+  {
+    "id": "voice_09",
+    "desc": "เสียงวัยรุ่นชาย",
+    "instruct": "teenager, male",
+    "ref_audio": "voice_09.wav",
+    "ref_text": "โย่ว วันนี้มีอะไรสนุกๆ บ้างครับ"
+  },
+  {
+    "id": "voice_10",
+    "desc": "เสียงผู้หญิงวัยทำงานตอนต้น",
+    "instruct": "young adult, female",
+    "ref_audio": "voice_10.wav",
+    "ref_text": "สวัสดีค่ะ ยินดีที่ได้ร่วมงานด้วยนะคะ"
+  },
+  {
+    "id": "voice_11",
+    "desc": "เสียงผู้ชายวัยทำงานตอนต้น",
+    "instruct": "young adult, male",
+    "ref_audio": "voice_11.wav",
+    "ref_text": "สวัสดีครับ ยินดีที่ได้ร่วมงานด้วยครับ"
+  },
+  {
+    "id": "voice_12",
+    "desc": "เสียงผู้ชายวัยกลางคน",
+    "instruct": "middle-aged, male",
+    "ref_audio": "voice_12.wav",
+    "ref_text": "เรียนท่านผู้มีเกียรติทุกท่านครับ"
+  },
+  {
+    "id": "voice_13",
+    "desc": "เสียงผู้หญิงวัยกลางคน",
+    "instruct": "middle-aged, female",
+    "ref_audio": "voice_13.wav",
+    "ref_text": "เรียนท่านผู้มีเกียรติทุกท่านค่ะ"
+  },
+  {
+    "id": "voice_14",
+    "desc": "เสียงผู้ชายสูงวัย",
+    "instruct": "elderly, male",
+    "ref_audio": "voice_14.wav",
+    "ref_text": "สวัสดีนะลูก วันนี้เป็นยังไงบ้าง"
+  },
+  {
+    "id": "voice_15",
+    "desc": "เสียงผู้หญิงสูงวัย",
+    "instruct": "elderly, female",
+    "ref_audio": "voice_15.wav",
+    "ref_text": "สวัสดีจ้ะหลาน วันนี้เป็นยังไงบ้าง"
+  },
+  {
+    "id": "voice_16",
+    "desc": "เสียงผู้หญิง สำเนียงอังกฤษ (British)",
+    "instruct": "female, british accent",
+    "ref_audio": "voice_16.wav",
+    "ref_text": "Hello, welcome to our service today."
+  },
+  {
+    "id": "voice_17",
+    "desc": "เสียงเด็กผู้ชาย",
+    "instruct": "child, male",
+    "ref_audio": "voice_17.wav",
+    "ref_text": "สวัสดีครับ ผมชอบเล่นฟุตบอลกับเพื่อนๆ ครับ"
+  },
+  {
+    "id": "voice_18",
+    "desc": "เสียงเด็กผู้หญิง",
+    "instruct": "child, female",
+    "ref_audio": "voice_18.wav",
+    "ref_text": "สวัสดีค่ะ หนูชอบวาดรูปกับอ่านนิทานค่ะ"
+  },
+  {
+    "id": "voice_19",
+    "desc": "เสียงผู้ชาย โทนกลาง",
+    "instruct": "male, moderate pitch",
+    "ref_audio": "voice_19.wav",
+    "ref_text": "ยินดีให้บริการครับ มีอะไรให้ช่วยเหลือไหมครับ"
+  },
+  {
+    "id": "voice_20",
+    "desc": "เสียงผู้หญิง โทนกลาง",
+    "instruct": "female, moderate pitch",
+    "ref_audio": "voice_20.wav",
+    "ref_text": "ยินดีให้บริการค่ะ มีอะไรให้ช่วยเหลือไหมคะ"
+  },
+  {
+    "id": "voice_21",
+    "desc": "เสียงวัยรุ่นชาย โทนสูง กระตือรือร้น",
+    "instruct": "teenager, male, high pitch",
+    "ref_audio": "voice_21.wav",
+    "ref_text": "เฮ้ย มาเล่นเกมด้วยกันไหมเพื่อน"
+  },
+  {
+    "id": "voice_22",
+    "desc": "เสียงผู้ชายวัยทำงานตอนต้น โทนต่ำ หนักแน่น",
+    "instruct": "young adult, male, low pitch",
+    "ref_audio": "voice_22.wav",
+    "ref_text": "สวัสดีครับ ผมขอนำเสนองานของทีมเราครับ"
+  },
+  {
+    "id": "voice_23",
+    "desc": "เสียงผู้หญิงวัยทำงานตอนต้น โทนสูง กระฉับกระเฉง",
+    "instruct": "young adult, female, high pitch",
+    "ref_audio": "voice_23.wav",
+    "ref_text": "สวัสดีค่ะ ดิฉันขอนำเสนองานของทีมเราค่ะ"
+  },
+  {
+    "id": "voice_24",
+    "desc": "เสียงผู้ชายวัยกลางคน โทนต่ำมาก น่าเชื่อถือ",
+    "instruct": "middle-aged, male, very low pitch",
+    "ref_audio": "voice_24.wav",
+    "ref_text": "เรียนผู้เข้าร่วมประชุมทุกท่านครับ"
+  },
+  {
+    "id": "voice_25",
+    "desc": "เสียงผู้ชายสูงวัย โทนต่ำมาก ใจดี",
+    "instruct": "elderly, male, very low pitch",
+    "ref_audio": "voice_25.wav",
+    "ref_text": "สมัยก่อนตอนพ่อยังหนุ่ม ชีวิตมันเรียบง่ายกว่านี้เยอะนะลูก"
+  },
+  {
+    "id": "voice_26",
+    "desc": "เสียงผู้หญิงสูงวัย โทนสูง อบอุ่น",
+    "instruct": "elderly, female, high pitch",
+    "ref_audio": "voice_26.wav",
+    "ref_text": "ยายดีใจมากเลยที่หลานมาเยี่ยม"
+  },
+  {
+    "id": "voice_27",
+    "desc": "เสียงผู้ชาย สำเนียงอังกฤษ (British)",
+    "instruct": "male, british accent",
+    "ref_audio": "voice_27.wav",
+    "ref_text": "Thank you for choosing us, we are happy to help."
+  },
+  {
+    "id": "voice_28",
+    "desc": "เสียงผู้ชาย สำเนียงอเมริกัน",
+    "instruct": "male, american accent",
+    "ref_audio": "voice_28.wav",
+    "ref_text": "Hello, welcome to our service today."
+  },
+  {
+    "id": "voice_29",
+    "desc": "เสียงผู้หญิง สำเนียงอเมริกัน",
+    "instruct": "female, american accent",
+    "ref_audio": "voice_29.wav",
+    "ref_text": "Thank you for choosing us, we are happy to help."
+  },
+  {
+    "id": "voice_30",
+    "desc": "เสียงผู้ชาย สำเนียงออสเตรเลีย",
+    "instruct": "male, australian accent",
+    "ref_audio": "voice_30.wav",
+    "ref_text": "It is a beautiful day to start something new."
+  },
+  {
+    "id": "voice_31",
+    "desc": "เสียงผู้หญิง สำเนียงออสเตรเลีย",
+    "instruct": "female, australian accent",
+    "ref_audio": "voice_31.wav",
+    "ref_text": "Feel free to ask if you have any questions."
+  },
+  {
+    "id": "voice_32",
+    "desc": "เสียงผู้ชาย กระซิบ",
+    "instruct": "male, whisper",
+    "ref_audio": "voice_32.wav",
+    "ref_text": "ฟังดีๆ นะครับ เรื่องนี้เป็นความลับระหว่างเรา"
+  },
+  {
+    "id": "voice_33",
+    "desc": "เสียงผู้หญิง กระซิบ",
+    "instruct": "female, whisper",
+    "ref_audio": "voice_33.wav",
+    "ref_text": "ฟังดีๆ นะคะ เรื่องนี้เป็นความลับระหว่างเรา"
+  },
+  {
+    "id": "voice_34",
+    "desc": "เสียงวัยรุ่นหญิง โทนต่ำ เท่ๆ",
+    "instruct": "teenager, female, low pitch",
+    "ref_audio": "voice_34.wav",
+    "ref_text": "เดี๋ยวนี้ก็แค่แชทหากันตลอดเลยเนอะ"
+  },
+  {
+    "id": "voice_35",
+    "desc": "เสียงวัยรุ่นชาย โทนกลาง",
+    "instruct": "teenager, male, moderate pitch",
+    "ref_audio": "voice_35.wav",
+    "ref_text": "วันนี้มีการบ้านเยอะมากเลยว่ะ"
+  },
+  {
+    "id": "voice_36",
+    "desc": "เสียงผู้หญิงวัยกลางคน โทนสูง สง่างาม",
+    "instruct": "middle-aged, female, high pitch",
+    "ref_audio": "voice_36.wav",
+    "ref_text": "ดิฉันขอเชิญทุกท่านร่วมงานในวันเสาร์นี้ค่ะ"
+  },
+  {
+    "id": "voice_37",
+    "desc": "เสียงเด็ก โทนสูงมาก ซุกซน",
+    "instruct": "child, very high pitch",
+    "ref_audio": "voice_37.wav",
+    "ref_text": "หนูอยากไปเที่ยวสวนสนุกจังเลย"
+  },
+  {
+    "id": "voice_38",
+    "desc": "เสียงผู้ชาย สำเนียงแคนาดา",
+    "instruct": "male, canadian accent",
+    "ref_audio": "voice_38.wav",
+    "ref_text": "Please hold on a moment while we process your request."
+  },
+  {
+    "id": "voice_39",
+    "desc": "เสียงผู้หญิง สำเนียงแคนาดา",
+    "instruct": "female, canadian accent",
+    "ref_audio": "voice_39.wav",
+    "ref_text": "Have a wonderful day ahead."
+  },
+  {
+    "id": "voice_40",
+    "desc": "เสียงผู้ชาย สำเนียงอินเดีย",
+    "instruct": "male, indian accent",
+    "ref_audio": "voice_40.wav",
+    "ref_text": "We hope you enjoy your experience with us."
+  },
+  {
+    "id": "voice_41",
+    "desc": "เสียงผู้หญิง สำเนียงอินเดีย",
+    "instruct": "female, indian accent",
+    "ref_audio": "voice_41.wav",
+    "ref_text": "It is a pleasure to meet you today."
+  },
+  {
+    "id": "voice_42",
+    "desc": "เสียงผู้ชาย สำเนียงจีน",
+    "instruct": "male, chinese accent",
+    "ref_audio": "voice_42.wav",
+    "ref_text": "Let me share some good news with you."
+  },
+  {
+    "id": "voice_43",
+    "desc": "เสียงผู้หญิง สำเนียงจีน",
+    "instruct": "female, chinese accent",
+    "ref_audio": "voice_43.wav",
+    "ref_text": "Here is the information you requested."
+  },
+  {
+    "id": "voice_44",
+    "desc": "เสียงผู้ชายวัยทำงานตอนต้น โทนสูงมาก ตื่นเต้น",
+    "instruct": "young adult, male, very high pitch",
+    "ref_audio": "voice_44.wav",
+    "ref_text": "โอ้โห เยี่ยมไปเลยครับ ดีใจด้วยจริงๆ"
+  },
+  {
+    "id": "voice_45",
+    "desc": "เสียงผู้หญิงวัยทำงานตอนต้น โทนต่ำมาก นุ่มลึก",
+    "instruct": "young adult, female, very low pitch",
+    "ref_audio": "voice_45.wav",
+    "ref_text": "ขอบคุณสำหรับความไว้วางใจนะคะ"
+  },
+  {
+    "id": "voice_46",
+    "desc": "เสียงผู้ชายวัยกลางคน โทนสูง ร่าเริง",
+    "instruct": "middle-aged, male, high pitch",
+    "ref_audio": "voice_46.wav",
+    "ref_text": "ผมมีเรื่องดีๆ มาบอกทุกคนครับ"
+  },
+  {
+    "id": "voice_47",
+    "desc": "เสียงผู้หญิงสูงวัย โทนต่ำมาก อ่อนโยน",
+    "instruct": "elderly, female, very low pitch",
+    "ref_audio": "voice_47.wav",
+    "ref_text": "ยายอยู่ตรงนี้เสมอนะ ไม่ต้องห่วง"
+  },
+  {
+    "id": "voice_48",
+    "desc": "เสียงผู้ชาย สำเนียงเกาหลี",
+    "instruct": "male, korean accent",
+    "ref_audio": "voice_48.wav",
+    "ref_text": "Have a wonderful day ahead."
+  }
+]

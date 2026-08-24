@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/Scripts/python.exe -u build_voices.py)",
+      "Bash(ssh root@72.62.74.123 \"docker run -d --name omnivoice-tts -p 8000:8000 --restart unless-stopped omnivoice-tts:cpu\")",
+      "Bash(ssh root@72.62.74.123 \"docker ps -a --filter name=omnivoice-tts\")"
+    ]
+  }
+}
