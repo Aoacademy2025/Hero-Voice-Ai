@@ -29,6 +29,8 @@ import tempfile
 import numpy as np
 import soundfile as sf
 
+import watermark
+
 SAMPLE_RATE = 24000
 MODEL_DIR = os.environ.get("INDEXTTS_MODEL_DIR", "/models/indextts2")
 CFG_PATH = os.environ.get("INDEXTTS_CFG", os.path.join(MODEL_DIR, "config.yaml"))
@@ -88,4 +90,5 @@ class IndexTTS2Engine:
         if abs(speed - 1.0) > 1e-3:          # ปรับความเร็ว (คง pitch)
             import librosa
             wav = librosa.effects.time_stretch(wav, rate=speed)
-        return np.asarray(wav, dtype=np.float32), SAMPLE_RATE
+        wav = watermark.apply(np.asarray(wav, dtype=np.float32), SAMPLE_RATE)
+        return wav, SAMPLE_RATE

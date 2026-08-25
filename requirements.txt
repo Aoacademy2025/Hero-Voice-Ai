@@ -9,14 +9,26 @@ soundfile
 librosa
 pydub
 numpy
+pythainlp  # แปลงตัวเลข/จำนวนเงินเป็นคำอ่านไทยก่อนอ่าน (ดู text_utils.normalize_thai_numbers)
 
 # API server
 fastapi
 uvicorn[standard]
+requests  # ใช้เรียก Gemini API ตอนเปิด TTS_GEMINI_TRANSLITERATE=1 (ดู gemini_translit.py) — เบามาก
 
 # วัดความคล้ายเสียง (speaker similarity) สำหรับ /clone best-of-N — ใช้ torch ที่มีอยู่แล้ว
 # ไม่ต้องติดตั้ง torch เพิ่ม (--no-deps ตอน dev เพื่อกัน pip แตะ torch หลัก)
 resemblyzer
 webrtcvad
+
+# ASR (ดู asr_engine.py) — CTranslate2 backend เร็วกว่า transformers Whisper เดิมมาก
+faster-whisper
+
+# Watermark เสียงที่ generate ทุกตัว (ดู watermark.py) — ตรวจสอบย้อนหลังได้ว่ามาจาก AI/ระบบเรา
+# ปิดได้ด้วย env TTS_ENABLE_WATERMARK=0 ถ้าไม่ต้องการ / ยังไม่พร้อมติดตั้ง
+audioseal
+
+# Dev/test — เทส text_utils.py ไม่ต้องมี GPU/โมเดล (ดู tests/test_text_utils.py)
+pytest
 
 # ติดตั้งตัวแพ็กเกจ omnivoice เอง (จากโฟลเดอร์ OmniVoice/) — ดู Dockerfile

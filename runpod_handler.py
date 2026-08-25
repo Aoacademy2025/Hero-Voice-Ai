@@ -15,7 +15,7 @@ runpod_handler.py — RunPod Serverless entrypoint
     {"mode": "tts", "voice_id": "voice_01", "text": "สวัสดีครับ"}
   TTS แบบออกแบบเสียง (voice design):
     {"mode": "tts", "instruct": "female, high pitch", "text": "..."}
-    optional ทั้งคู่: language, speed, num_step, guidance_scale, mixed_language
+    optional ทั้งคู่: language, speed, num_step, guidance_scale, mixed_language, transliterate_english, normalize_numbers
 
   Voice cloning (best-of-N อัตโนมัติเหมือน /clone บน server.py):
     {"mode": "clone", "ref_audio_b64": "<base64 wav/mp3>", "ref_text": "...", "text": "..."}
@@ -38,7 +38,7 @@ import numpy as np
 
 from server import OmniVoiceEngine, SAMPLE_RATE, wav_bytes, b64, clean_instruct, \
     _CLONE_BEST_OF, _BEST_OF_CLASS_TEMPERATURE
-from text_utils import split_by_language
+from text_utils import normalize_thai_numbers, split_by_language, transliterate_english
 
 # โหลดโมเดลครั้งเดียวตอน import (cold start ของ worker) — ไม่ใช่ทุก job
 print("[handler] loading OmniVoice engine ...")
@@ -73,6 +73,10 @@ def _do_tts(inp: dict) -> dict:
     guidance_scale = inp.get("guidance_scale")
     language = inp.get("language")
     mixed_language = inp.get("mixed_language", True)
+    if inp.get("transliterate_english", True):
+        text = transliterate_english(text)
+    if inp.get("normalize_numbers", True):
+        text = normalize_thai_numbers(text)
 
     t = time.time()
     if mixed_language:

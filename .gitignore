@@ -34,3 +34,6 @@ Thumbs.db
 *.zip
 test_handler_*.wav
 __pycache__/
+
+# LLM transliteration cache (runtime-generated, machine-specific)
+translit_cache.json

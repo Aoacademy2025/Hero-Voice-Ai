@@ -11,10 +11,14 @@ API ให้บริการเสียงสต็อก + ออกแบ�
 | `voice_library.py` | คลังเสียงโคลนถาวรต่อผู้ใช้ (SQLite + wav) |
 | `credits.py` | ระบบ API key + เครดิต + rate-limit (SQLite) |
 | `manage_keys.py` | CLI จัดการ key/เครดิต |
-| `text_utils.py` | ตัดข้อความเป็นก้อนสำหรับ streaming |
+| `text_utils.py` | ตัดข้อความเป็นก้อนสำหรับ streaming + ทับศัพท์คำอังกฤษ + แปลงตัวเลขเป็นคำอ่านไทย |
+| `gemini_translit.py` | fallback ถามคำทับศัพท์จาก Gemini API สำหรับคำที่ไม่มีในดิก (ปิดเป็นดีฟอลต์) |
+| `asr_engine.py` | ASR ด้วย faster-whisper (เร็วกว่า transformers Whisper เดิม) |
+| `watermark.py` | ฝัง audio watermark (AudioSeal) ลงเสียงที่ generate ทุกตัว |
 | `client_example.py` | ตัวอย่างเรียก API |
 | `Dockerfile` / `Dockerfile.cpu` | image สำหรับ deploy (GPU / CPU) |
 | `requirements.txt` | dependencies |
+| `tests/test_text_utils.py` | pytest สำหรับ text_utils.py (ไม่ต้องมี GPU/โมเดล — รัน `pytest tests/ -v`) |
 
 ## Endpoints
 | Method | Path | รายละเอียด |
@@ -110,7 +114,13 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 | `TTS_CUSTOM_VOICES_DIR` | `./custom_voices` | โฟลเดอร์เก็บเสียงโคลนถาวร (ควร mount volume) |
 | `TTS_VOICES_DB` | `<custom_voices>/voices.db` | SQLite เมทาดาทาเสียงโคลน |
 | `TTS_PROMPT_CACHE_SIZE` | `64` | จำนวน clone-prompt ที่ cache ในแรม |
-| `TTS_ASR_MODEL` | `openai/whisper-large-v3-turbo` | โมเดล ASR (โหลด lazy) |
+| `TTS_ASR_MODEL` | `large-v3-turbo` | โมเดล ASR — ชื่อโมเดลของ faster-whisper (ดู `asr_engine.py`), โหลด lazy |
+| `TTS_ASR_DEVICE` | auto (`cuda`/`cpu`) | บังคับ device ที่ ASR รัน แยกจาก TTS ได้ |
+| `TTS_ASR_COMPUTE_TYPE` | `float16` (cuda) / `int8` (cpu) | ความละเอียด compute ของ faster-whisper |
+| `TTS_ENABLE_WATERMARK` | `1` (เปิด) | ฝัง audio watermark (AudioSeal) ลงเสียงที่ generate ทุกตัว — ตั้ง `0` เพื่อปิด (ดู `watermark.py`) |
+| `TTS_GEMINI_TRANSLITERATE` | `0` (ปิด) | เปิด fallback ถามคำทับศัพท์จาก Gemini API สำหรับคำอังกฤษที่ไม่มีในดิก (ดู `gemini_translit.py`) — ต้องตั้ง `GEMINI_API_KEY` ด้วย |
+| `GEMINI_API_KEY` | — | จำเป็นถ้าเปิด `TTS_GEMINI_TRANSLITERATE=1` — สร้างฟรีที่ https://aistudio.google.com/apikey |
+| `GEMINI_MODEL` | `gemini-2.5-flash-lite` | โมเดล Gemini ที่ใช้ทับศัพท์ |
 
 > **Auth:** ถ้าไม่ตั้งทั้ง `TTS_API_KEY` และ `TTS_CREDITS_DB` = ไม่บังคับ auth (เหมาะ dev เท่านั้น)
 > ก่อนเปิด public **ต้อง**ตั้งอย่างใดอย่างหนึ่ง

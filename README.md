@@ -15,7 +15,10 @@
 - ⚡ **Streaming (SSE)** — ทยอยส่งเสียงทีละก้อน ผู้ใช้ได้ยินเร็วขึ้น
 - 🔌 **OpenAI-compatible** (`/v1/audio/speech`) — เสียบแทน OpenAI TTS ได้
 - 💳 **ระบบเครดิต + rate-limit** — หลาย API key แยกยอด คิดเงินตามวินาทีเสียง
-- 🔀 **หลายภาษา / ปรับความเร็ว / ปรับคุณภาพ (num_step)** ต่อ request
+- 🔀 **หลายภาษา (ไทย/ลาว/อังกฤษ) / ปรับความเร็ว / ปรับคุณภาพ (num_step)** ต่อ request
+- 🗣️ **ทับศัพท์คำอังกฤษ + แปลงตัวเลขเป็นคำอ่านไทย** ก่อนอ่าน — กันเสียงเพี้ยน/สะดุดตอนสลับภาษา
+  หรือสคริปต์กับเสียงไม่ตรงกันตอนมีตัวเลข/เบอร์โทร/จำนวนเงิน (ดู `text_utils.py`)
+- 🔒 **Audio watermark** (AudioSeal) ฝังในเสียงที่ generate ทุกตัว — ตรวจสอบย้อนหลังได้ว่ามาจาก AI
 
 - 🎭 **อารมณ์ (emotion)** + cloning เหมือนสูง — ผ่านเอนจินเสริม **IndexTTS-2** (optional, ต้อง GPU — ดู DEPLOY.md)
 
@@ -49,9 +52,13 @@ bash start_all.sh                          # หรือ: python server.py
 | `voice_library.py` | คลังเสียงโคลนถาวรต่อผู้ใช้ (SQLite + ไฟล์ wav) |
 | `credits.py` | ระบบ API key + เครดิต + rate-limit (SQLite) |
 | `manage_keys.py` | CLI จัดการ key/เครดิต |
-| `text_utils.py` | ตัดข้อความเป็นก้อนสำหรับ streaming |
+| `text_utils.py` | ตัดข้อความเป็นก้อนสำหรับ streaming + ทับศัพท์คำอังกฤษ + แปลงตัวเลขเป็นคำอ่านไทย |
+| `gemini_translit.py` | fallback ทับศัพท์ผ่าน Gemini API สำหรับคำที่ไม่มีในดิก (ปิดเป็นดีฟอลต์) |
+| `asr_engine.py` | ASR ด้วย faster-whisper |
+| `watermark.py` | ฝัง audio watermark (AudioSeal) |
 | `client_example.py` / `web_example.html` | ตัวอย่างเรียกใช้ |
 | `Dockerfile` / `Dockerfile.cpu` | image สำหรับ deploy (GPU / CPU) |
+| `tests/test_text_utils.py` | pytest สำหรับ text_utils.py — รัน `pytest tests/ -v` (ไม่ต้องมี GPU/โมเดล) |
 
 ## เอกสาร
 

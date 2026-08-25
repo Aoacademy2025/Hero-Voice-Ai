@@ -84,9 +84,12 @@ python manage_keys.py list
 | `voice_id` | ✳️ | — | เสียงสต็อก (ดู `/voices`) |
 | `instruct` | ✳️ | — | ออกแบบเสียง เช่น `"female, high pitch, british accent"` |
 | `engine` | ❌ | omnivoice | เลือกเอนจิน |
-| `language` | ❌ | auto | เช่น `"Thai"`, `"English"` |
+| `language` | ❌ | auto | เช่น `"Thai"`, `"English"`, `"Lao"` |
 | `num_step` | ❌ | 16 | diffusion steps (4–64) สูง=ดีขึ้นแต่ช้า |
 | `speed` | ❌ | 1.0 | ความเร็ว (0.3–3.0) |
+| `mixed_language` | ❌ | true | แยกช่วงไทย/ลาว/อังกฤษ generate คนละภาษาแล้วต่อเสียง (กันโมเดลอ่านผิดภาษา) |
+| `transliterate_english` | ❌ | true | แปลงคำอังกฤษที่พบบ่อย (เช่น "Google"→"กูเกิล") เป็นคำทับศัพท์ไทยก่อนอ่าน — กันเสียงสะดุด/เพี้ยนตรงรอยต่อภาษา ดูดิกคำที่รองรับใน `text_utils.ENGLISH_TO_THAI` (เพิ่มคำเองได้) |
+| `normalize_numbers` | ❌ | true | แปลงตัวเลข/จำนวนเงิน/เบอร์โทร เป็นคำอ่านภาษาไทยก่อนอ่าน (เช่น "1,250 บาท"→"หนึ่งพันสองร้อยห้าสิบบาทถ้วน", "081-234-5678"→อ่านทีละหลัก) — กันสคริปต์กับเสียงที่ได้ไม่ตรงกัน |
 
 ✳️ ต้องมี `voice_id` **หรือ** `instruct` อย่างน้อยหนึ่ง
 

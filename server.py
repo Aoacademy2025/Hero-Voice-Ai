@@ -43,7 +43,9 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from omnivoice import OmniVoice
-from text_utils import chunk_text, split_by_language
+import asr_engine
+import watermark
+from text_utils import chunk_text, normalize_thai_numbers, split_by_language, transliterate_english
 from voice_library import VoiceLibrary
 
 # ── config ──────────────────────────────────────────────────────────
@@ -65,12 +67,14 @@ VOICES_DB = os.environ.get("TTS_VOICES_DB", os.path.join(CUSTOM_VOICES_DIR, "voi
 # จำนวน clone-prompt ที่ cache ในแรม (เกินนี้ evict ตัวเก่าสุด) — กันแรมบวมเมื่อมีเสียงเยอะ
 PROMPT_CACHE_SIZE = int(os.environ.get("TTS_PROMPT_CACHE_SIZE", "64"))
 
-# ASR (ถอดเสียง) — โหลด lazy ครั้งแรกที่ใช้ (โมเดล Whisper ~1.5GB ดาวน์โหลดแยก)
-ASR_MODEL = os.environ.get("TTS_ASR_MODEL", "openai/whisper-large-v3-turbo")
+# ASR (ถอดเสียง) — ดู asr_engine.py (faster-whisper, โหลด lazy ครั้งแรกที่ใช้,
+# ปรับโมเดล/device ได้ด้วย env TTS_ASR_MODEL / TTS_ASR_DEVICE / TTS_ASR_COMPUTE_TYPE)
 
 # ตัวคูณความเร็วฐาน: โมเดลพูดช้ากว่าธรรมชาติ → คูณให้ slider 1.0 = ความเร็วคนจริง
 # ผู้ใช้ตั้ง speed=1.0 → โมเดลได้ speed = 1.0 * BASE_SPEED. ปรับจูนได้ตามชอบ
-BASE_SPEED = float(os.environ.get("TTS_BASE_SPEED", "1.4"))
+# เดิม 1.4 → ลดเป็น 1.15 → ผู้ใช้ทดสอบแล้วยังเร็วไป ลดลงอีกเป็น 1.0 (ไม่คูณเพิ่มเลย)
+# ปรับต่อได้ตามหูจริง (ตั้ง env TTS_BASE_SPEED หรือใช้ speed slider ใน request ช่วยได้ด้วย)
+BASE_SPEED = float(os.environ.get("TTS_BASE_SPEED", "1.0"))
 
 # เอนจินที่ 2: IndexTTS-2 (cloning เหมือนสูง + อารมณ์) — เปิดด้วย TTS_ENABLE_INDEXTTS=1 (ต้อง GPU + ติดตั้ง)
 ENABLE_INDEXTTS = os.environ.get("TTS_ENABLE_INDEXTTS", "") == "1"
@@ -116,7 +120,6 @@ class OmniVoiceEngine:
         # LRU cache ของ clone-prompt สำหรับเสียงโคลนถาวร (voice_id -> VoiceClonePrompt)
         self._pcache = OrderedDict()
         self._pcache_lock = threading.Lock()
-        self._asr_loaded = False
 
     def load(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -160,7 +163,7 @@ class OmniVoiceEngine:
         ]
 
     def _run(self, text, *, voice_id=None, clone_prompt=None, instruct=None,
-             language=None, speed=1.0, num_step=24, guidance_scale=None,
+             language=None, speed=1.0, num_step=32, guidance_scale=None,
              class_temperature=None):
         """generate หนึ่งก้อน (blocking) → (wav float32 ndarray, duration_sec)"""
         # คูณความเร็วฐาน (slider 1.0 = ธรรมชาติ) แล้ว clamp ให้อยู่ในช่วงที่โมเดลรับได้
@@ -178,6 +181,7 @@ class OmniVoiceEngine:
         with torch.no_grad():
             audio = self.model.generate(**kwargs)
         wav = np.asarray(audio[0], dtype=np.float32)
+        wav = watermark.apply(wav, self.sample_rate)
         return wav, len(wav) / self.sample_rate
 
     @staticmethod
@@ -216,16 +220,9 @@ class OmniVoiceEngine:
         with self._pcache_lock:
             self._pcache.pop(voice_id, None)
 
-    # ── ASR (ถอดเสียง) ──
-    def ensure_asr(self):
-        if not self._asr_loaded:
-            print(f"[omnivoice] loading ASR model: {ASR_MODEL} ...")
-            self.model.load_asr_model(ASR_MODEL)
-            self._asr_loaded = True
-
+    # ── ASR (ถอดเสียง) — ผ่าน asr_engine.py (faster-whisper, เร็วกว่า Whisper เดิมมาก) ──
     def transcribe(self, audio_path):
-        self.ensure_asr()
-        return self.model.transcribe(audio_path)
+        return asr_engine.transcribe(audio_path)
 
 
 ENGINES = {}
@@ -383,13 +380,22 @@ class TTSRequest(BaseModel):
     voice_id: Optional[str] = Field(None, description="รหัสเสียงสต็อก (ดู /voices)")
     engine: str = Field("omnivoice")
     instruct: Optional[str] = Field(None, description="ออกแบบเสียง เช่น 'female, high pitch'")
-    language: Optional[str] = Field(None, description="เช่น 'Thai', 'English' (ปล่อยว่าง=auto)")
-    num_step: int = Field(24, ge=4, le=64, description="สูง=คุณภาพ/ความคล้ายดีขึ้นแต่ช้าลง")
+    language: Optional[str] = Field(None, description="เช่น 'Thai', 'English', 'Lao' (ปล่อยว่าง=auto)")
+    # เดิม default=24 ต่ำกว่า num_step=32 ที่ใช้สร้างเสียงสต็อกใน build_voices.py (และต่ำกว่า
+    # default ของโมเดลเอง=32) ทำให้เสียงสต็อก/เสียงเพี้ยนไม่เป็นธรรมชาติ (บั๊กเดียวกับที่เคย
+    # เจอใน /clone — ดูคอมเมนต์ที่ CloneRequest.num_step) ปรับกลับมาให้ตรงกัน
+    num_step: int = Field(32, ge=4, le=64, description="สูง=คุณภาพ/ความคล้ายดีขึ้นแต่ช้าลง")
     speed: float = Field(1.0, gt=0.3, lt=3.0)
     guidance_scale: Optional[float] = Field(None, ge=1.0, le=5.0,
         description="คุมความยึดเสียงต้นฉบับ (ดีฟอลต์ 2.0); 3-4 = คล้ายขึ้นแต่เสี่ยงเพี้ยน")
     mixed_language: bool = Field(True,
-        description="แยกช่วงไทย/อังกฤษ generate ด้วยภาษาที่ถูกต้องแล้วต่อเสียง (ไทยล้วน=ไม่มีผล). ดีฟอลต์เปิด")
+        description="แยกช่วงไทย/ลาว/อังกฤษ generate ด้วยภาษาที่ถูกต้องแล้วต่อเสียง (ไทยล้วน=ไม่มีผล). ดีฟอลต์เปิด")
+    transliterate_english: bool = Field(True,
+        description="แปลงคำอังกฤษที่พบบ่อย (ดูดิกใน text_utils.ENGLISH_TO_THAI) เป็นคำทับศัพท์ไทยก่อนอ่าน "
+                    "ลดปัญหาเสียงเพี้ยน/สะดุดตอนสลับภาษา — คำที่ไม่มีในดิกยังอ่านผ่าน mixed_language แบบเดิม")
+    normalize_numbers: bool = Field(True,
+        description="แปลงตัวเลข (จำนวน/เงินบาท/เบอร์โทร) เป็นคำอ่านภาษาไทยก่อนอ่าน "
+                    "กันปัญหาสคริปต์กับเสียงที่ได้ไม่ตรงกันตอนมีตัวเลข (ดู text_utils.normalize_thai_numbers)")
     emotion: Optional[str] = Field(None,
         description="อารมณ์ (เฉพาะเอนจินที่รองรับ เช่น IndexTTS) เช่น 'happy','sad','angry','excited'")
 
@@ -503,12 +509,16 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
         raise HTTPException(422, "ต้องระบุ voice_id (สต็อก/โคลน) หรือ instruct (ออกแบบเสียง)")
     instruct = clean_instruct(req.instruct)
     clone_prompt = await resolve_clone_prompt(eng, req.voice_id, keyrec) if req.voice_id else None
+    text = transliterate_english(req.text) if req.transliterate_english else req.text
+    if req.normalize_numbers:
+        text = normalize_thai_numbers(text)
 
     t = time.time()
     if req.mixed_language:
         # แยกช่วงไทย/อังกฤษ → generate แต่ละช่วงด้วยภาษาที่ถูก (เสียงเดียวกัน) → ต่อเสียง
+        # (หลัง transliterate แล้วคำอังกฤษที่รู้จักจะกลายเป็นไทย เหลือแค่คำที่ไม่มีในดิกที่ยังตัดช่วง)
         wavs = []
-        for seg, lang in split_by_language(req.text):
+        for seg, lang in split_by_language(text):
             w, _ = await _generate_serialized(
                 eng._run, seg, clone_prompt=clone_prompt, instruct=instruct,
                 language=lang, speed=req.speed, num_step=req.num_step,
@@ -519,7 +529,7 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
         duration = len(wav) / SAMPLE_RATE
     else:
         wav, duration = await _generate_serialized(
-            eng._run, req.text, clone_prompt=clone_prompt, instruct=instruct,
+            eng._run, text, clone_prompt=clone_prompt, instruct=instruct,
             language=req.language, speed=req.speed, num_step=req.num_step,
             guidance_scale=req.guidance_scale,
         )
@@ -544,7 +554,10 @@ async def tts_stream(req: TTSRequest, keyrec=Depends(auth)):
         raise HTTPException(422, "ต้องระบุ voice_id หรือ instruct")
     instruct = clean_instruct(req.instruct)
     clone_prompt = await resolve_clone_prompt(eng, req.voice_id, keyrec) if req.voice_id else None
-    chunks = chunk_text(req.text)
+    text = transliterate_english(req.text) if req.transliterate_english else req.text
+    if req.normalize_numbers:
+        text = normalize_thai_numbers(text)
+    chunks = chunk_text(text)
 
     async def gen():
         total_dur = 0.0
