@@ -12,7 +12,7 @@ OmniVoice - สคริปต์ใช้งานง่าย (รันบน
   python tts.py --text "Hello world" --instruct "female, british accent" --out out.wav
 
 ตัวเลือกเพิ่มเติม:
-  --num_step 16     จำนวน diffusion steps (16=เร็ว, 32=คุณภาพสูงขึ้น)
+  --num_step 32     จำนวน diffusion steps (16=เร็ว, 32=คุณภาพสูงขึ้น — default หลัง A/B ฟังเทียบ)
   --speed 1.0       ความเร็วพูด (>1 เร็วขึ้น, <1 ช้าลง)
 """
 import argparse
@@ -38,7 +38,7 @@ def main():
     p.add_argument("--ref_audio", default=None, help="ไฟล์เสียงตัวอย่างสำหรับโคลน (3-10 วิ)")
     p.add_argument("--ref_text", default=None, help="ข้อความที่ตรงกับ ref_audio")
     p.add_argument("--instruct", default=None, help="คำอธิบายเสียง เช่น 'female, british accent'")
-    p.add_argument("--num_step", type=int, default=16, help="diffusion steps (16=เร็ว, 32=คุณภาพ)")
+    p.add_argument("--num_step", type=int, default=32, help="diffusion steps (16=เร็ว, 32=คุณภาพ)")
     p.add_argument("--speed", type=float, default=1.0, help="ความเร็วพูด")
     args = p.parse_args()
 

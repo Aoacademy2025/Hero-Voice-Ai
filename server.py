@@ -17,6 +17,10 @@ server.py — Hero Voice TTS API (v2)
           pitch(very low/low/moderate/high/very high pitch), style(whisper),
           accent(american/british/australian accent, ...) — แต่ละหมวด <=1 คำ คั่นด้วย ", "
 
+อารมณ์ (emotion) จริงๆ ที่โมเดลปรับ prosody เอง มีแค่ IndexTTS-2 (ต้อง GPU) — engine หลัก
+OmniVoice เองไม่รองรับ แต่เปิดให้ใช้ emotion ได้ด้วยเหมือนกันผ่าน emotion_fx.py (ปรับ pitch/
+speed แบบ DSP หลัง generate เสร็จ เป็นการประมาณคร่าวๆ ไม่ใช่โมเดลปรับ ใช้ได้แม้ไม่มี GPU)
+
 รัน:
   python build_voices.py     # ครั้งเดียว สร้างคลังเสียง
   python server.py           # http://0.0.0.0:8000  (Swagger: /docs)
@@ -44,6 +48,7 @@ from pydantic import BaseModel, Field
 
 from omnivoice import OmniVoice
 import asr_engine
+import audio_enhance
 import watermark
 from text_utils import chunk_text, normalize_thai_numbers, split_by_language, transliterate_english
 from voice_library import VoiceLibrary
@@ -52,10 +57,18 @@ from voice_library import VoiceLibrary
 _BASE = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.environ.get("TTS_MODEL_DIR", os.path.join(_BASE, "model"))
 VOICES_DIR = os.environ.get("TTS_VOICES_DIR", os.path.join(_BASE, "voices"))
+# เสียงสต็อกภาษาลาว — manifest/โฟลเดอร์แยกจาก voices/ (ดู build_voices_lao.py) โหลดเพิ่มเข้ามา
+# เป็น voice_id เดิม (lao_01..lao_04) ถ้าโฟลเดอร์/manifest ไม่มีก็ข้ามไปเงียบๆ (ไม่ error)
+LAO_VOICES_DIR = os.environ.get("TTS_LAO_VOICES_DIR", os.path.join(_BASE, "voices_lao"))
 SAMPLE_RATE = 24000
 
+# เอาเสียงสำเนียงชาติอื่นออกก่อน (british/american/australian/canadian/indian/chinese/korean
+# accent — voice_16, 27-31, 38-43, 48) เหลือแต่เสียงไทย/อังกฤษล้วนที่ยังไม่มีสำเนียงต่างชาติ
+# 32, 33 = เสียงกระซิบ (whisper) — ฟังแล้วไม่เป็นธรรมชาติ เอาออกด้วย (ดูคอมเมนต์ใน build_voices.py)
+_FOREIGN_ACCENT_IDS = {16, 27, 28, 29, 30, 31, 32, 33, 38, 39, 40, 41, 42, 43, 48}
 SERVED_VOICE_IDS = os.environ.get(
-    "TTS_VOICE_IDS", ",".join(f"voice_{i:02d}" for i in range(1, 49))
+    "TTS_VOICE_IDS",
+    ",".join(f"voice_{i:02d}" for i in range(1, 49) if i not in _FOREIGN_ACCENT_IDS),
 ).split(",")
 
 MAX_CONCURRENCY = int(os.environ.get("TTS_MAX_CONCURRENCY", "2"))
@@ -72,9 +85,22 @@ PROMPT_CACHE_SIZE = int(os.environ.get("TTS_PROMPT_CACHE_SIZE", "64"))
 
 # ตัวคูณความเร็วฐาน: โมเดลพูดช้ากว่าธรรมชาติ → คูณให้ slider 1.0 = ความเร็วคนจริง
 # ผู้ใช้ตั้ง speed=1.0 → โมเดลได้ speed = 1.0 * BASE_SPEED. ปรับจูนได้ตามชอบ
-# เดิม 1.4 → ลดเป็น 1.15 → ผู้ใช้ทดสอบแล้วยังเร็วไป ลดลงอีกเป็น 1.0 (ไม่คูณเพิ่มเลย)
+# เดิม 1.4 → ลดเป็น 1.15 → ผู้ใช้ทดสอบแล้วยังเร็วไป ลดลงอีกเป็น 1.0 → ยังเร็วไปอีก ผู้ใช้ส่งคลิป
+# เสียงต้นแบบมาให้ฟัง (Recording 2026-09-02 003620.mp4) ถอดเสียงแล้ววัดจริง: พูด 33 ตัวอักษร
+# ใน ~3.23 วิ (หักช่วงเงียบ/หายใจออก) = ~10.2 ตัวอักษร/วิ เทียบกับ voice_01 เดิมที่ ~15.8
+# ตัวอักษร/วิ (42 ตัวอักษร ใน 2.66 วิ ตอน speed=1.0) → ลดลงอีกเป็น 0.65 (~10.2/15.8)
 # ปรับต่อได้ตามหูจริง (ตั้ง env TTS_BASE_SPEED หรือใช้ speed slider ใน request ช่วยได้ด้วย)
-BASE_SPEED = float(os.environ.get("TTS_BASE_SPEED", "1.0"))
+BASE_SPEED = float(os.environ.get("TTS_BASE_SPEED", "0.65"))
+
+# class_temperature ดีฟอลต์ของทุก generate — ดีฟอลต์ของโมเดลเองคือ 0 (greedy/deterministic
+# token sampling ทุกครั้ง) ซึ่งเป็นสาเหตุหลักที่เสียงจาก /tts (endpoint หลักที่ใช้งานจริงผ่าน voice_id
+# ทั้งเสียงสต็อกและเสียงโคลนถาวร) ฟังดูแบน/หุ่นยนต์ — ต่างจาก /clone ที่ตั้ง class_temperature=0.8
+# ไว้แล้ว (เพราะมี best-of-N คอยกรองตัวที่แย่ทิ้ง) แต่ /tts ไม่มี best-of-N (generate ครั้งเดียวจบ
+# ต่อ request เพราะเรียกบ่อยกว่ามาก) จึงตั้งค่ากลางๆ ต่ำกว่า /clone ไว้ก่อน (ความเสี่ยงออกเสียงเพี้ยน
+# สูงขึ้นตามค่านี้ แต่ไม่มีตัวกรองมาเลือกซ้ำเหมือน best-of-N)
+# ยังไม่ได้วัดผลจริง (GPU เครื่องนี้ใช้งานไม่ได้ตอนแก้) — ทดสอบฟังเทียบก่อน-หลังแล้วปรับต่อได้
+# (ตั้ง env TTS_CLASS_TEMPERATURE หรือส่ง class_temperature เองต่อ request ก็ได้ ดู TTSRequest)
+DEFAULT_CLASS_TEMPERATURE = float(os.environ.get("TTS_CLASS_TEMPERATURE", "0.4"))
 
 # เอนจินที่ 2: IndexTTS-2 (cloning เหมือนสูง + อารมณ์) — เปิดด้วย TTS_ENABLE_INDEXTTS=1 (ต้อง GPU + ติดตั้ง)
 ENABLE_INDEXTTS = os.environ.get("TTS_ENABLE_INDEXTTS", "") == "1"
@@ -112,6 +138,9 @@ class OmniVoiceEngine:
     sample_rate = SAMPLE_RATE
     supports_clone = True
     supports_design = True
+    # อารมณ์แบบ DSP หลัง generate เสร็จ (pitch/speed) ไม่ใช่ prosody จริงแบบ IndexTTS-2
+    # (โมเดล OmniVoice เองไม่รองรับอารมณ์) — ดู emotion_fx.py, ใช้งานได้แม้ไม่มี GPU
+    supports_emotion = True
 
     def __init__(self):
         self.model = None
@@ -155,12 +184,38 @@ class OmniVoiceEngine:
             self.voices[vid] = {"meta": v, "ref_audio": ref_audio, "preview_path": ref_audio}
         print(f"[omnivoice] {len(self.voices)} stock voices registered (lazy-encode on first use)")
 
-    def list_voices(self):
-        return [
-            {"voice_id": vid, "desc": v["meta"].get("desc", ""),
-             "instruct": v["meta"].get("instruct", "")}
-            for vid, v in self.voices.items()
-        ]
+        self._load_extra_manifest(LAO_VOICES_DIR, label="Lao")
+
+    def _load_extra_manifest(self, voices_dir, *, label):
+        """โหลด manifest เสียงสต็อกเพิ่มเติม (เช่น voices_lao/) เข้ามาปนกับ self.voices เดิม
+        ไม่มีโฟลเดอร์/manifest → ข้ามเงียบๆ (ไม่ error, เป็น feature เสริม)"""
+        manifest_path = os.path.join(voices_dir, "voices.json")
+        if not os.path.exists(manifest_path):
+            return
+        with open(manifest_path, encoding="utf-8") as f:
+            extra = json.load(f)
+        for v in extra:
+            vid = v["id"]
+            ref_audio = os.path.join(voices_dir, v["ref_audio"])
+            self.voices[vid] = {"meta": v, "ref_audio": ref_audio, "preview_path": ref_audio}
+        print(f"[omnivoice] +{len(extra)} {label} stock voices registered from {voices_dir}")
+
+    def list_voices(self, language=None):
+        """
+        ดีฟอลต์ (language=None) → คืนเฉพาะเสียงชุดหลัก (ไทย/อังกฤษ, ไม่มี "language" ใน manifest)
+        ไม่ปนเสียงลาวเข้ามาโดยไม่ได้ขอ — แยกชัดเจนตามที่ขอ ต้องระบุ language="lao" ถึงจะเห็น
+        """
+        out = []
+        for vid, v in self.voices.items():
+            v_lang = v["meta"].get("language")
+            if language is None:
+                if v_lang is not None:  # มี language เฉพาะ (เช่นลาว) → ไม่ใส่ในชุดดีฟอลต์
+                    continue
+            elif (v_lang or "").lower() != language.lower():
+                continue
+            out.append({"voice_id": vid, "desc": v["meta"].get("desc", ""),
+                       "instruct": v["meta"].get("instruct", ""), "language": v_lang})
+        return out
 
     def _run(self, text, *, voice_id=None, clone_prompt=None, instruct=None,
              language=None, speed=1.0, num_step=32, guidance_scale=None,
@@ -168,8 +223,12 @@ class OmniVoiceEngine:
         """generate หนึ่งก้อน (blocking) → (wav float32 ndarray, duration_sec)"""
         # คูณความเร็วฐาน (slider 1.0 = ธรรมชาติ) แล้ว clamp ให้อยู่ในช่วงที่โมเดลรับได้
         eff_speed = max(0.31, min(2.99, speed * BASE_SPEED))
+        # class_temperature=None (ไม่ระบุ) → ใช้ DEFAULT_CLASS_TEMPERATURE เสมอ (ดูคอมเมนต์ที่นิยาม
+        # ค่านี้) กันเสียงแบน/หุ่นยนต์จาก greedy decoding ดีฟอลต์ของโมเดล — ผู้เรียกที่ต้องการ greedy
+        # จริงๆ (เช่น debug ให้ผลซ้ำได้) ส่ง class_temperature=0.0 ตรงๆ มาได้
+        eff_class_temp = DEFAULT_CLASS_TEMPERATURE if class_temperature is None else class_temperature
         kwargs = dict(text=text, speed=eff_speed,
-                      generation_config=self._gcfg(num_step, guidance_scale, class_temperature))
+                      generation_config=self._gcfg(num_step, guidance_scale, eff_class_temp))
         if language:
             kwargs["language"] = language
         if clone_prompt is not None:
@@ -374,6 +433,22 @@ async def _generate_serialized(fn, *args, **kwargs):
             return await asyncio.to_thread(fn, *args, **kwargs)
 
 
+async def _apply_emotion(emotion: str, wav: np.ndarray) -> np.ndarray:
+    """ใส่อารมณ์แบบ DSP (emotion_fx.py) ให้ wav ที่ generate เสร็จแล้ว — ไม่แตะโมเดล
+    เลยไม่ต้องเข้าคิว sem/lock เหมือน generate แค่ offload ไป thread เพราะ librosa เป็น CPU-bound
+    ปรับ pitch/speed แล้วฝัง watermark ซ้ำ (การปรับ pitch/tempo อาจทำให้ watermark เดิมเพี้ยน)"""
+    import emotion_fx
+
+    def _run():
+        try:
+            out = emotion_fx.apply(wav, SAMPLE_RATE, emotion)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        return watermark.apply(out, SAMPLE_RATE)
+
+    return await asyncio.to_thread(_run)
+
+
 # ── models ──────────────────────────────────────────────────────────
 class TTSRequest(BaseModel):
     text: str = Field(..., min_length=1)
@@ -388,6 +463,10 @@ class TTSRequest(BaseModel):
     speed: float = Field(1.0, gt=0.3, lt=3.0)
     guidance_scale: Optional[float] = Field(None, ge=1.0, le=5.0,
         description="คุมความยึดเสียงต้นฉบับ (ดีฟอลต์ 2.0); 3-4 = คล้ายขึ้นแต่เสี่ยงเพี้ยน")
+    class_temperature: Optional[float] = Field(None, ge=0.0, le=2.0,
+        description="คุมความหลากหลายของโทนเสียง (ดีฟอลต์ระบบ = DEFAULT_CLASS_TEMPERATURE, "
+                    "ไม่ใช่ 0 ของโมเดลเอง — กันเสียงแบน/หุ่นยนต์จาก greedy decoding); "
+                    "0 = greedy (ผลซ้ำเดิมทุกครั้ง แต่แบนกว่า), สูงขึ้น = หลากหลายขึ้นแต่เสี่ยงเพี้ยน")
     mixed_language: bool = Field(True,
         description="แยกช่วงไทย/ลาว/อังกฤษ generate ด้วยภาษาที่ถูกต้องแล้วต่อเสียง (ไทยล้วน=ไม่มีผล). ดีฟอลต์เปิด")
     transliterate_english: bool = Field(True,
@@ -397,7 +476,11 @@ class TTSRequest(BaseModel):
         description="แปลงตัวเลข (จำนวน/เงินบาท/เบอร์โทร) เป็นคำอ่านภาษาไทยก่อนอ่าน "
                     "กันปัญหาสคริปต์กับเสียงที่ได้ไม่ตรงกันตอนมีตัวเลข (ดู text_utils.normalize_thai_numbers)")
     emotion: Optional[str] = Field(None,
-        description="อารมณ์ (เฉพาะเอนจินที่รองรับ เช่น IndexTTS) เช่น 'happy','sad','angry','excited'")
+        description="อารมณ์ — engine='omnivoice': ปรับ pitch/speed หลัง generate (DSP, ไม่ใช่โมเดล; "
+                    "ดู emotion_fx.py, ใช้ได้แม้ไม่มี GPU); engine='indextts2': โมเดลปรับ prosody จริง "
+                    "(genuine, ต้อง GPU). ค่าที่ใช้ได้ (หรือคำไทย เช่น ดีใจ/เศร้า/โกรธ ดู emotion_fx.ALLOWED): "
+                    "happy, excited, sad, angry, calm, fear, surprised, neutral, disgust, gentle, "
+                    "confident, serious, playful, tired, nervous")
 
 
 class TTSResponse(BaseModel):
@@ -450,10 +533,12 @@ async def engines():
 
 
 @app.get("/voices", dependencies=[Depends(auth)])
-async def list_voices(request: Request, engine: str = "omnivoice"):
+async def list_voices(request: Request, engine: str = "omnivoice",
+                       language: Optional[str] = None):
+    """ดีฟอลต์คืนเฉพาะเสียงชุดหลัก (ไทย/อังกฤษ) — ส่ง ?language=lao เพื่อดูเสียงลาวแยกต่างหาก"""
     eng = get_engine(engine)
     base = str(request.base_url).rstrip("/")
-    out = eng.list_voices()
+    out = eng.list_voices(language=language)
     for v in out:
         v["preview_url"] = f"{base}/voices/{v['voice_id']}/preview?engine={engine}"
     return out
@@ -522,17 +607,25 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
             w, _ = await _generate_serialized(
                 eng._run, seg, clone_prompt=clone_prompt, instruct=instruct,
                 language=lang, speed=req.speed, num_step=req.num_step,
-                guidance_scale=req.guidance_scale,
+                guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
             )
             wavs.append(w)
         wav = np.concatenate(wavs) if len(wavs) > 1 else wavs[0]
         duration = len(wav) / SAMPLE_RATE
     else:
+        # req.language ไม่ระบุ → ใช้ "language" จาก manifest ของ voice_id เอง ถ้ามี (เช่นเสียงลาว
+        # ที่ language="Lao" เสมอ — ดู voices_lao/voices.json) กัน auto-detect ของโมเดลพลาดตอน
+        # ข้อความมีแต่ตัวเลข/สัญลักษณ์ที่บอกภาษาจาก unicode ไม่ได้
+        lang = req.language or (eng.voices.get(req.voice_id, {}).get("meta", {}).get("language")
+                                if req.voice_id else None)
         wav, duration = await _generate_serialized(
             eng._run, text, clone_prompt=clone_prompt, instruct=instruct,
-            language=req.language, speed=req.speed, num_step=req.num_step,
-            guidance_scale=req.guidance_scale,
+            language=lang, speed=req.speed, num_step=req.num_step,
+            guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
         )
+    if req.emotion:
+        wav = await _apply_emotion(req.emotion, wav)
+        duration = len(wav) / SAMPLE_RATE
     gen_time = time.time() - t
     cost = charge(keyrec, duration, "tts")
     return TTSResponse(
@@ -558,15 +651,21 @@ async def tts_stream(req: TTSRequest, keyrec=Depends(auth)):
     if req.normalize_numbers:
         text = normalize_thai_numbers(text)
     chunks = chunk_text(text)
+    # ดูคอมเมนต์เดียวกันใน /tts — fallback เป็น language ของ voice_id เอง (เช่นเสียงลาว) ถ้าไม่ระบุ
+    lang = req.language or (eng.voices.get(req.voice_id, {}).get("meta", {}).get("language")
+                            if req.voice_id else None)
 
     async def gen():
         total_dur = 0.0
         for i, chunk in enumerate(chunks):
             wav, dur = await _generate_serialized(
                 eng._run, chunk, clone_prompt=clone_prompt, instruct=instruct,
-                language=req.language, speed=req.speed, num_step=req.num_step,
-                guidance_scale=req.guidance_scale,
+                language=lang, speed=req.speed, num_step=req.num_step,
+                guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
             )
+            if req.emotion:
+                wav = await _apply_emotion(req.emotion, wav)
+                dur = len(wav) / SAMPLE_RATE
             total_dur += dur
             evt = {"index": i, "total": len(chunks), "text": chunk,
                    "audio_base64": b64(wav_bytes(wav)), "duration": round(dur, 2)}
@@ -601,6 +700,68 @@ class CloneResponse(BaseModel):
 _CLONE_BEST_OF = 3
 _BEST_OF_CLASS_TEMPERATURE = 0.8  # ต้อง >0 ไม่งั้นทุกรอบได้ผลเหมือนกัน (greedy)
 
+# ── ตัวชี้วัดความเป็นธรรมชาติ (naturalness) สำหรับ best-of-N ─────────────
+# ปัญหา: การเลือก "ตัวที่ดีที่สุด" จากเดิมใช้แค่ speaker similarity (คล้าย ref_audio มากสุด)
+# ซึ่งมีจุดอ่อน — ถ้า ref_audio ที่ผู้ใช้ส่งมาเป็นประโยคสั้นๆ อ่านแบบราบเรียบ (ไม่มีขึ้นลงของเสียง)
+# ตัวที่ "คล้าย ref มากที่สุด" มักเป็นตัวที่ราบเรียบที่สุดด้วยเหมือนกัน — ทำให้ระบบเลือกตัวหุ่นยนต์/
+# ไม่เป็นธรรมชาติซ้ำๆ ทั้งที่มี candidate อื่นที่ออกเสียงเป็นธรรมชาติกว่าแต่คะแนนความคล้ายต่ำกว่านิดหน่อย
+# แก้โดยเพิ่มคะแนน "pitch variation" (ส่วนเบี่ยงเบนมาตรฐานของ f0 หน่วย semitone) เข้าไปถ่วงน้ำหนัก
+# ร่วมกับ similarity — ตัวที่มีทำนองเสียงขึ้นลงมากกว่า (ธรรมชาติกว่า) ได้คะแนนเพิ่ม ไม่ถูกตัดออกเพียง
+# เพราะคล้าย ref น้อยกว่าตัวที่แบนที่สุดนิดเดียว
+# หมายเหตุ: ค่า _NATURALNESS_WEIGHT นี้เป็นการประมาณตามหลักการ (CFG guidance ที่สูงเกินไป/greedy
+# sampling ทำให้เสียงแบน) ยังไม่ได้วัดผลจริงแบบ N=1..5 ด้านบน (GPU เครื่องนี้ใช้งานไม่ได้ตอนแก้)
+# ควรทดสอบฟังเทียบก่อน-หลังจริงแล้วปรับตัวเลขนี้ต่อ
+_NATURALNESS_WEIGHT = 0.15
+
+
+def _pitch_variation(wav: np.ndarray, sr: int) -> float:
+    """ประมาณความหลากหลายของทำนองเสียง (ส่วนเบี่ยงเบนมาตรฐานของ f0 หน่วย semitone)
+    ยิ่งสูง = เสียงมีขึ้นลงเป็นธรรมชาติมากกว่า, ใกล้ 0 = เสียงราบเรียบ/หุ่นยนต์
+    error/ไม่มีช่วงที่ออกเสียงพอ → คืน 0.0 (ไม่ throw ทำให้ best-of-N ล้ม)"""
+    try:
+        import librosa
+        f0, voiced_flag, _ = librosa.pyin(
+            wav, sr=sr, fmin=librosa.note_to_hz("C2"), fmax=librosa.note_to_hz("C6")
+        )
+        f0 = f0[voiced_flag.astype(bool)]
+        f0 = f0[~np.isnan(f0)]
+        if len(f0) < 4:
+            return 0.0
+        semitones = 12 * np.log2(f0 / np.median(f0))
+        return float(np.std(semitones))
+    except Exception:
+        return 0.0
+
+# ── คุณภาพ ref_audio ─────────────────────────────────────────────────
+# เมื่อ "อีกฝั่ง" (พาร์ทเนอร์/ลูกค้า) เป็นคนส่งไฟล์เสียงมาให้โคลน เราควบคุมคุณภาพไฟล์ต้นทาง
+# ไม่ได้ (มือถือ, มีเสียงรบกวน, ยาว/สั้นเกินไป) — เอนจินยึดตามคำแนะนำที่ทุก endpoint บอกไว้แล้วว่า
+# "3-10 วิ" แต่ไม่เคยบังคับจริง จึงตรวจ/แก้ให้อัตโนมัติที่นี่แทนที่จะพึ่งให้ผู้ส่งไฟล์ทำถูกเอง:
+#   - สั้นกว่า _REF_MIN_SEC: ปฏิเสธ (สั้นเกินไปจนจับลักษณะเสียงของคนพูดไม่ได้แม่นยำ)
+#   - ยาวกว่า _REF_MAX_SEC: ตัดสั้นลงอัตโนมัติเหลือ _REF_TRIM_SEC วิแรก (ไม่ปฏิเสธ ผู้ส่งไฟล์
+#     ไม่จำเป็นต้องรู้ข้อจำกัดนี้มาก่อน — ยาวเกินไม่ได้ช่วยให้โคลนดีขึ้น แค่ทำให้ช้าลงเฉยๆ)
+_REF_MIN_SEC = 2.0
+_REF_MAX_SEC = 15.0
+_REF_TRIM_SEC = 12.0
+
+
+def _ensure_ref_quality(path: str) -> float:
+    """ตรวจความยาวไฟล์ ref_audio ที่ path (in-place) → คืนความยาว (วินาที) หลังตรวจ/ตัด
+    ปฏิเสธ (422) ถ้าสั้นเกินไป, ตัดอัตโนมัติถ้ายาวเกินไป — ใช้ร่วมกันทั้ง /clone และ /voices"""
+    info = sf.info(path)
+    duration = info.duration
+    if duration < _REF_MIN_SEC:
+        raise HTTPException(
+            422,
+            f"ไฟล์เสียงอ้างอิงสั้นเกินไป ({duration:.1f} วินาที) — "
+            f"ต้องการอย่างน้อย {_REF_MIN_SEC:.0f} วินาทีเพื่อให้จับลักษณะเสียงได้แม่นยำ",
+        )
+    if duration > _REF_MAX_SEC:
+        wav, sr = sf.read(path, dtype="float32")
+        wav = wav[: int(_REF_TRIM_SEC * sr)]
+        sf.write(path, wav, sr, format="WAV")
+        return _REF_TRIM_SEC
+    return duration
+
 
 @app.post("/clone", response_model=CloneResponse)
 async def clone(
@@ -613,10 +774,19 @@ async def clone(
     # ต่ำกว่า default ของโมเดลเอง=32) ทำให้เสียงโคลนแตก/เพี้ยนกว่าเสียงสต็อกอย่างชัดเจน
     # ปรับกลับมาเท่ากับที่ใช้สร้างเสียงสต็อก
     num_step: int = Form(32, ge=4, le=64),
-    # guidance_scale สูงขึ้นเล็กน้อยจาก default ของโมเดล (2.0) เพื่อยึดเสียงต้นฉบับ
-    # มากขึ้นสำหรับงาน cloning โดยเฉพาะ — ไม่ขึ้นถึง 3-4 ที่เสี่ยงเสียงเพี้ยน (ดู TTSRequest.guidance_scale)
-    guidance_scale: Optional[float] = Form(2.5, ge=1.0, le=5.0),
+    # เดิม 2.5 (สูงกว่า default ของโมเดล 2.0) เพื่อยึดเสียงต้นฉบับมากขึ้นสำหรับงาน cloning —
+    # แต่ guidance_scale ที่สูงเกินไปมีผลข้างเคียงแบบเดียวกับ CFG ใน diffusion ทั่วไป: ยึดเงื่อนไข
+    # แน่นเกินจนเสียงขาดความหลากหลายตามธรรมชาติ ฟังดูแบน/หุ่นยนต์ (ผู้ใช้รายงานว่าเสียงโคลนไม่เป็น
+    # ธรรมชาติ) ปรับกลับมาที่ default ของโมเดล (2.0) ให้มีพื้นที่ออกเสียงเป็นธรรมชาติมากขึ้น
+    # ยังไม่ได้วัดผลจริง (GPU เครื่องนี้ใช้งานไม่ได้ตอนแก้) — ลองฟังเทียบก่อน-หลังได้เมื่อ GPU กลับมา
+    guidance_scale: Optional[float] = Form(2.0, ge=1.0, le=5.0),
     speed: float = Form(1.0, gt=0.3, lt=3.0),
+    # ดีฟอลต์เปิด (เดิม False) — "อีกฝั่ง" ที่ส่งไฟล์มาโคลนมักไม่รู้/ไม่สนใจพารามิเตอร์นี้
+    # เราจึงทำความสะอาดให้อัตโนมัติเสมอเพื่อการันตีคุณภาพโคลนที่ดีที่สุดโดยไม่ต้องพึ่งฝั่งผู้ส่ง
+    # (enhance() ออกแบบให้ fail-safe — ถ้า Demucs ใช้ไม่ได้/พังกลางทาง คืนไฟล์เดิมเสมอ ไม่ throw)
+    enhance_ref: bool = Form(True,
+        description="ลดเสียงรบกวนพื้นหลัง/เพิ่มความชัดของไฟล์ ref ก่อนโคลน (ดู /enhance) "
+                    "เปิดอยู่โดยดีฟอลต์ — ปิดได้ถ้าไฟล์สะอาดอยู่แล้วและอยากให้เร็วขึ้น"),
     keyrec=Depends(auth),
 ):
     """
@@ -630,26 +800,49 @@ async def clone(
         tmp.write(await ref_audio.read())
         tmp_path = tmp.name
 
-    def _clone_run():
-        with torch.no_grad():
-            prompt = eng.model.create_voice_clone_prompt(ref_audio=tmp_path, ref_text=ref_text)
-
-        from voice_similarity import embed_file, embed_array, cosine_sim
-        ref_emb = embed_file(tmp_path)
-        best_wav, best_dur, best_score = None, None, -1.0
-        for _ in range(_CLONE_BEST_OF):
-            wav, dur = eng._run(text, clone_prompt=prompt, language=language, speed=speed,
-                                num_step=num_step, guidance_scale=guidance_scale,
-                                class_temperature=_BEST_OF_CLASS_TEMPERATURE)
-            score = cosine_sim(ref_emb, embed_array(wav, SAMPLE_RATE))
-            if score > best_score:
-                best_wav, best_dur, best_score = wav, dur, score
-        return best_wav, best_dur, best_score
-
     try:
+        _ensure_ref_quality(tmp_path)  # ปฏิเสธถ้าสั้นเกินไป / ตัดอัตโนมัติถ้ายาวเกินไป
+
+        if enhance_ref:
+            try:
+                ewav, esr = await asyncio.to_thread(audio_enhance.enhance, tmp_path)
+                sf.write(tmp_path, ewav, esr, format="WAV")
+            except Exception as e:
+                print(f"[clone] enhance_ref ล้มเหลว (ใช้ไฟล์เดิม): {e}")
+
+        def _clone_run():
+            with torch.no_grad():
+                prompt = eng.model.create_voice_clone_prompt(ref_audio=tmp_path, ref_text=ref_text)
+
+            from voice_similarity import embed_file, embed_array, cosine_sim
+            ref_emb = embed_file(tmp_path)
+            # generate ทั้ง N ตัวก่อน ค่อยให้คะแนน — ต้องรู้ pitch variation ของทุกตัวก่อนจะ
+            # normalize ข้ามกันได้ (ดู _NATURALNESS_WEIGHT ด้านบน)
+            candidates = []  # [(wav, dur, sim_score, pitch_var), ...]
+            for _ in range(_CLONE_BEST_OF):
+                wav, dur = eng._run(text, clone_prompt=prompt, language=language, speed=speed,
+                                    num_step=num_step, guidance_scale=guidance_scale,
+                                    class_temperature=_BEST_OF_CLASS_TEMPERATURE)
+                sim = cosine_sim(ref_emb, embed_array(wav, SAMPLE_RATE))
+                pitch_var = _pitch_variation(wav, SAMPLE_RATE)
+                candidates.append((wav, dur, sim, pitch_var))
+
+            pitch_vars = [c[3] for c in candidates]
+            lo, hi = min(pitch_vars), max(pitch_vars)
+            spread = hi - lo
+            best_wav, best_dur, best_sim, best_blended = None, None, None, -1.0
+            for wav, dur, sim, pitch_var in candidates:
+                pitch_norm = (pitch_var - lo) / spread if spread > 1e-6 else 0.0
+                blended = sim + _NATURALNESS_WEIGHT * pitch_norm
+                if blended > best_blended:
+                    best_wav, best_dur, best_sim, best_blended = wav, dur, sim, blended
+            return best_wav, best_dur, best_sim
+
         t = time.time()
         wav, duration, sim_score = await _generate_serialized(_clone_run)
         gen_time = time.time() - t
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(422, f"โคลนเสียงไม่สำเร็จ: {e}")
     finally:
@@ -685,6 +878,11 @@ async def create_voice(
     name: str = Form("", description="ชื่อเสียง (แสดงให้ผู้ใช้)"),
     ref_text: Optional[str] = Form(None, description="ข้อความในไฟล์ ref — เว้นว่าง = ถอดอัตโนมัติ (ASR)"),
     engine: str = Form("omnivoice"),
+    # ดีฟอลต์เปิด (เดิม False) — เหตุผลเดียวกับ /clone: เจ้าของเสียงที่ส่งไฟล์มาไม่จำเป็นต้องรู้จัก
+    # พารามิเตอร์นี้ แต่เราอยากการันตีคุณภาพเสียงโคลนถาวรที่ดีที่สุดให้เสมอ
+    enhance_ref: bool = Form(True,
+        description="ลดเสียงรบกวนพื้นหลัง/เพิ่มความชัดของไฟล์ ref ก่อนเก็บ (ดู /enhance) "
+                    "เปิดอยู่โดยดีฟอลต์ — ปิดได้ถ้าไฟล์สะอาดอยู่แล้วและอยากให้เร็วขึ้น"),
     keyrec=Depends(auth),
 ):
     """
@@ -697,6 +895,15 @@ async def create_voice(
         tmp.write(await ref_audio.read())
         tmp_path = tmp.name
     try:
+        _ensure_ref_quality(tmp_path)  # ปฏิเสธถ้าสั้นเกินไป / ตัดอัตโนมัติถ้ายาวเกินไป
+
+        if enhance_ref:
+            try:
+                ewav, esr = await asyncio.to_thread(audio_enhance.enhance, tmp_path)
+                sf.write(tmp_path, ewav, esr, format="WAV")
+            except Exception as e:
+                print(f"[voices] enhance_ref ล้มเหลว (ใช้ไฟล์เดิม): {e}")
+
         if not ref_text or not ref_text.strip():
             ref_text = (await _generate_serialized(eng.transcribe, tmp_path)).strip()
             if not ref_text:
@@ -755,6 +962,37 @@ async def transcribe_ep(
     finally:
         os.remove(tmp_path)
     return {"text": text}
+
+
+class EnhanceResponse(BaseModel):
+    audio_base64: str
+    format: str = "wav"
+    sample_rate: int
+    duration: float
+
+
+# ── Enhance (ลดเสียงรบกวน + เพิ่มความชัด) ──────────────────────────────
+@app.post("/enhance", response_model=EnhanceResponse)
+async def enhance_ep(
+    audio: UploadFile = File(..., description="ไฟล์เสียงที่ต้องการลดเสียงรบกวน/เพิ่มความชัด"),
+    keyrec=Depends(auth),
+):
+    """แยกเสียงพูดออกจากเสียงพื้นหลัง/รบกวน (Demucs) + normalize ความดัง — คืนไฟล์เสียงที่ทำความสะอาดแล้ว
+    ใช้เดี่ยวๆ ได้ หรือเอาไปเป็น ref_audio ต่อใน /clone, /voices (ดู enhance_ref param)"""
+    suffix = os.path.splitext(audio.filename or "")[1] or ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(await audio.read())
+        tmp_path = tmp.name
+    try:
+        wav, sr = await asyncio.to_thread(audio_enhance.enhance, tmp_path)
+    except Exception as e:
+        raise HTTPException(422, f"ลดเสียงรบกวนไม่สำเร็จ: {e}")
+    finally:
+        os.remove(tmp_path)
+    buf = io.BytesIO()
+    sf.write(buf, wav, sr, format="WAV")
+    return EnhanceResponse(audio_base64=b64(buf.getvalue()), sample_rate=sr,
+                           duration=round(len(wav) / sr, 2))
 
 
 # ── OpenAI-compatible endpoint ───────────────────────────────────────

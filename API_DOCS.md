@@ -11,7 +11,41 @@ API แปลงข้อความเป็นเสียงพูด (Thai/
 > **หมายเหตุ instruct:** `instruct` = *ออกแบบเสียง* ไม่ใช่ *อารมณ์*
 > รองรับเฉพาะ: เพศ (male/female), อายุ (child/teenager/young adult/middle-aged/elderly),
 > pitch (very low/low/moderate/high/very high pitch), whisper, สำเนียง (british accent ฯลฯ)
-> — happy/sad/angry **ใช้ไม่ได้**
+> — happy/sad/angry ใส่ใน `instruct` **ใช้ไม่ได้**
+>
+> **อารมณ์จริงๆ ใช้ parameter แยก `emotion`** (ดูฟิลด์ `emotion` ใน `/tts`) — ค่าที่ใช้ได้:
+> `happy`, `excited`, `sad`, `angry`, `calm`, `fear`, `surprised`, `neutral`, `disgust`, `gentle`,
+> `confident`, `serious`, `playful`, `tired`, `nervous` (หรือคำไทย เช่น ดีใจ/เศร้า/โกรธ/ตื่นเต้น/
+> มั่นใจ/จริงจัง — ดูรายการเต็มที่ `emotion_fx.ALLOWED`) engine `omnivoice` (ดีฟอลต์): ปรับ
+> pitch/ความเร็วแบบ DSP หลัง generate เสร็จ (ประมาณคร่าวๆ ใช้ได้แม้ไม่มี GPU) — engine
+> `indextts2`: โมเดลปรับน้ำเสียงจริง (ต้อง GPU + ติดตั้งเพิ่ม, ดู `TTS_ENABLE_INDEXTTS`)
+
+---
+
+## ความสามารถของโมเดล (OmniVoice Capabilities)
+
+เอนจินหลัก `omnivoice` เป็นโมเดล TTS แบบ zero-shot รองรับ **646 ภาษา** ([รายชื่อเต็ม](OmniVoice/docs/languages.md))
+ความสามารถด้านล่างมาจากตัวโมเดลเอง — คอลัมน์ "ใช้ผ่าน API นี้ยังไง" บอกว่าตอนนี้เรียกใช้ได้จาก endpoint ไหนบ้าง
+
+| ความสามารถ | รายละเอียด | ใช้ผ่าน API นี้ยังไง |
+|---|---|---|
+| **หลายภาษา (646 ภาษา)** | ไทย ลาว อังกฤษ จีน ญี่ปุ่น ฯลฯ — ระบุชื่อภาษาเต็ม (`"Thai"`, `"Lao"`) หรือรหัส ISO (`"th"`, `"lo"`) | field `language` ใน `/tts`, `/clone` |
+| **สลับภาษากลางประโยค (code-switching)** | ตัดข้อความเป็นช่วงตามสคริปต์ (ไทย/ลาว/อังกฤษ) generate แยกภาษาแล้วต่อเสียง กันโมเดลอ่านผิดภาษา | field `mixed_language` ใน `/tts` (ดีฟอลต์เปิด) — ดู `text_utils.split_by_language` |
+| **Voice Cloning (zero-shot)** | โคลนเสียงจากไฟล์อ้างอิง 3-10 วิ ไม่ต้องเทรนโมเดลใหม่ | `/clone` (ครั้งเดียว, best-of-3 + วัด similarity/naturalness อัตโนมัติ), `/voices` (เก็บถาวรใช้ซ้ำ) |
+| **Voice Design** | ออกแบบเสียงจากคำบรรยาย: เพศ, อายุ, pitch, กระซิบ, สำเนียง (ไม่ใช่การโคลนจากไฟล์จริง) | field `instruct` ใน `/tts` |
+| **อารมณ์ (Emotion)** | ปรับน้ำเสียงให้ดีใจ/เศร้า/โกรธ/ตื่นเต้น ฯลฯ | field `emotion` ใน `/tts` — engine `omnivoice`=DSP ประมาณคร่าวๆ, engine `indextts2`=โมเดลปรับจริง (ต้อง GPU) |
+| **สัญลักษณ์ไม่ใช่คำพูด (non-verbal tags)** | แทรกแท็กในข้อความให้ออกเสียงหัวเราะ/ถอนหายใจ/อุทาน เช่น `[laughter]`, `[sigh]`, `[surprise-ah]`, `[question-en]` | ใส่ในข้อความ (`text`) ตรงๆ ได้เลยทุก endpoint — โมเดลอ่านแท็กพวกนี้ตรงๆ ไม่ต้องตั้งค่าเพิ่ม (ดูรายการแท็กทั้งหมดด้านล่าง) |
+| **Streaming** | ตัดข้อความเป็นก้อน ทยอยส่งเสียงทีละก้อนแทนที่จะรอจนจบ | `/tts/stream` (SSE) |
+| **ASR (ถอดเสียง)** | ถอดไฟล์เสียงเป็นข้อความ | `/transcribe`, และอัตโนมัติตอน `/voices` ถ้าไม่ระบุ `ref_text` |
+| **ลดเสียงรบกวน (denoise)** | แยกเสียงพูดออกจากเสียงพื้นหลัง/ดนตรี + normalize ความดัง (Demucs) | `/enhance` แบบเดี่ยวๆ, หรือ `enhance_ref=true` (ดีฟอลต์) ใน `/clone`, `/voices` |
+| **แปลงคำอังกฤษ/ตัวเลขเป็นคำอ่านไทย** | กันเสียงสะดุด/เพี้ยนตอนอ่านคำทับศัพท์อังกฤษหรือตัวเลข/จำนวนเงินกลางประโยคไทย | field `transliterate_english`, `normalize_numbers` ใน `/tts` (ดีฟอลต์เปิดทั้งคู่) |
+| **ลายน้ำเสียง (watermark)** | ฝังลายน้ำที่ตรวจสอบย้อนกลับได้ในไฟล์เสียงที่สร้างทุกไฟล์ | อัตโนมัติทุก endpoint ที่สร้างเสียง (ดู `watermark.py`) |
+| **OpenAI-compatible** | เสียบแทน OpenAI TTS ได้ทันที เปลี่ยนแค่ base URL + key | `/v1/audio/speech` |
+
+**แท็ก non-verbal ที่รองรับ:** `[laughter]`, `[sigh]`, `[confirmation-en]`, `[question-en]`, `[question-ah]`,
+`[question-oh]`, `[question-ei]`, `[question-yi]`, `[surprise-ah]`, `[surprise-oh]`, `[surprise-wa]`,
+`[surprise-yo]`, `[dissatisfaction-hnn]` — ตัวอย่าง: `"เดี๋ยวนะ [laughter] ตลกมากเลย"`
+> ถ้าเปิด `transliterate_english`/`normalize_numbers` (ดีฟอลต์เปิด) คำในแท็ก (เช่น "laughter") จะถูกสแกนหาในดิกทับศัพท์เหมือนคำอังกฤษทั่วไป — ไม่เคยเจอคำเหล่านี้ในดิกจริง จึงผ่านไปตรงๆ แต่ถ้าอยากชัวร์ 100% ปิด `transliterate_english=false` ตอนใช้แท็กพวกนี้ได้
 
 ---
 
@@ -54,13 +88,20 @@ python manage_keys.py list
 ### `GET /engines` — รายการเอนจิน
 ```json
 [{ "id":"omnivoice","name":"OmniVoice","sample_rate":24000,
-   "supports_clone":true,"supports_design":true,"num_voices":48 }]
+   "supports_clone":true,"supports_design":true,"num_voices":35 }]
 ```
 
-### `GET /voices?engine=omnivoice` — รายการเสียงสต็อก
+### `GET /voices?engine=omnivoice&language=` — รายการเสียงสต็อก
+ดีฟอลต์ (ไม่ใส่ `language`) คืนเฉพาะ**เสียงชุดหลัก (ไทย/อังกฤษ)** — **ไม่ปนเสียงลาว**
+ต้องระบุ `?language=lao` ชัดๆ ถึงจะได้เสียงลาวแยกต่างหาก (ดู [เสียงภาษาลาว](#เสียงภาษาลาว-lao-voices))
 ```json
-[{ "voice_id":"voice_02","desc":"เสียงผู้หญิง โทนปกติ","instruct":"female",
+[{ "voice_id":"voice_02","desc":"เสียงผู้หญิง โทนปกติ","instruct":"female","language":null,
    "preview_url":"http://<host>/voices/voice_02/preview?engine=omnivoice" }]
+```
+`GET /voices?language=lao`:
+```json
+[{ "voice_id":"lao_01","desc":"เสียงผู้ชาย ภาษาลาว โทนปกติ","instruct":"male","language":"Lao",
+   "preview_url":"http://<host>/voices/lao_01/preview?engine=omnivoice" }]
 ```
 
 ### `GET /voices/{voice_id}/preview` — ไฟล์เสียงตัวอย่าง (audio/wav)
@@ -74,7 +115,7 @@ python manage_keys.py list
   "engine": "omnivoice",
   "instruct": null,
   "language": null,
-  "num_step": 16,
+  "num_step": 32,
   "speed": 1.0
 }
 ```
@@ -85,8 +126,10 @@ python manage_keys.py list
 | `instruct` | ✳️ | — | ออกแบบเสียง เช่น `"female, high pitch, british accent"` |
 | `engine` | ❌ | omnivoice | เลือกเอนจิน |
 | `language` | ❌ | auto | เช่น `"Thai"`, `"English"`, `"Lao"` |
-| `num_step` | ❌ | 16 | diffusion steps (4–64) สูง=ดีขึ้นแต่ช้า |
+| `num_step` | ❌ | 32 | diffusion steps (4–64) สูง=ดีขึ้นแต่ช้า |
 | `speed` | ❌ | 1.0 | ความเร็ว (0.3–3.0) |
+| `guidance_scale` | ❌ | 2.0 | คุมความยึดเสียงต้นฉบับ; 3-4 = คล้ายขึ้นแต่เสี่ยงเพี้ยน |
+| `class_temperature` | ❌ | 0.4 | คุมความหลากหลายของโทนเสียง — 0 = greedy (ผลซ้ำเดิมทุกครั้ง แต่แบน/หุ่นยนต์), สูงขึ้น = เป็นธรรมชาติขึ้นแต่เสี่ยงเพี้ยน |
 | `mixed_language` | ❌ | true | แยกช่วงไทย/ลาว/อังกฤษ generate คนละภาษาแล้วต่อเสียง (กันโมเดลอ่านผิดภาษา) |
 | `transliterate_english` | ❌ | true | แปลงคำอังกฤษที่พบบ่อย (เช่น "Google"→"กูเกิล") เป็นคำทับศัพท์ไทยก่อนอ่าน — กันเสียงสะดุด/เพี้ยนตรงรอยต่อภาษา ดูดิกคำที่รองรับใน `text_utils.ENGLISH_TO_THAI` (เพิ่มคำเองได้) |
 | `normalize_numbers` | ❌ | true | แปลงตัวเลข/จำนวนเงิน/เบอร์โทร เป็นคำอ่านภาษาไทยก่อนอ่าน (เช่น "1,250 บาท"→"หนึ่งพันสองร้อยห้าสิบบาทถ้วน", "081-234-5678"→อ่านทีละหลัก) — กันสคริปต์กับเสียงที่ได้ไม่ตรงกัน |
@@ -115,15 +158,17 @@ data: {"done":true,"total_duration":9.4,"credits_charged":9.4}
 ### `POST /clone` — โคลนเสียงจากไฟล์ (multipart/form-data)
 | field | type | required | รายละเอียด |
 |---|---|---|---|
-| `ref_audio` | file | ✅ | ไฟล์เสียง 3–10 วิ (wav/mp3) |
+| `ref_audio` | file | ✅ | ไฟล์เสียง แนะนำ 3–10 วิ (wav/mp3) — สั้นกว่า 2 วิ = ปฏิเสธ (422), ยาวกว่า 15 วิ = ตัดอัตโนมัติเหลือ 12 วิแรก |
 | `ref_text` | string | ✅ | ข้อความที่พูดในไฟล์ ref |
 | `text` | string | ✅ | ข้อความที่อยากให้พูด |
 | `engine` | string | ❌ | ดีฟอลต์ omnivoice |
 | `language` | string | ❌ | — |
-| `num_step` | int | ❌ | 16 |
+| `num_step` | int | ❌ | 32 |
 | `speed` | float | ❌ | 1.0 |
+| `enhance_ref` | bool | ❌ | true — ลดเสียงรบกวน/normalize ไฟล์ ref อัตโนมัติก่อนโคลน (ปิดได้ถ้าไฟล์สะอาดอยู่แล้ว) |
 
 ไม่เก็บไฟล์ ref ถาวร — ใช้ครั้งเดียวแล้วลบ
+ภายในสร้างเสียง 3 รอบ (best-of-3) แล้วเลือกตัวที่คล้ายเสียงต้นฉบับที่สุดให้อัตโนมัติ — ไม่ต้องตั้งค่าเพิ่ม
 
 ---
 
@@ -135,10 +180,11 @@ data: {"done":true,"total_duration":9.4,"credits_charged":9.4}
 ### `POST /voices` — สร้างเสียงโคลนถาวร (multipart/form-data)
 | field | type | required | รายละเอียด |
 |---|---|---|---|
-| `ref_audio` | file | ✅ | ไฟล์เสียง 3–10 วิ (wav/mp3 — ระบบแปลงเป็น wav 24k ให้) |
+| `ref_audio` | file | ✅ | ไฟล์เสียง แนะนำ 3–10 วิ (wav/mp3 — ระบบแปลงเป็น wav 24k ให้) — สั้นกว่า 2 วิ = ปฏิเสธ (422), ยาวกว่า 15 วิ = ตัดอัตโนมัติเหลือ 12 วิแรก |
 | `name` | string | ❌ | ชื่อเสียง |
 | `ref_text` | string | ❌ | ข้อความในไฟล์ — **เว้นว่าง = ถอดอัตโนมัติด้วย ASR** |
 | `engine` | string | ❌ | ดีฟอลต์ omnivoice |
+| `enhance_ref` | bool | ❌ | true — ลดเสียงรบกวน/normalize ไฟล์ ref อัตโนมัติก่อนเก็บ (ปิดได้ถ้าไฟล์สะอาดอยู่แล้ว) |
 
 **Response** `200`
 ```json
@@ -160,6 +206,50 @@ data: {"done":true,"total_duration":9.4,"credits_charged":9.4}
 
 ---
 
+## เสียงภาษาลาว (Lao Voices)
+
+โมเดล OmniVoice รองรับภาษาลาว (`lo`/`lao`) เป็นหนึ่งใน 646 ภาษาโดยตรงอยู่แล้ว ใช้งานได้ 2 แบบ:
+
+1. **เสียงสต็อกลาวสำเร็จรูป** — เลือกผ่าน `voice_id` ตรงๆ เหมือนเสียงไทย (ดูตารางด้านล่าง) **แยก
+   จากเสียงชุดหลักเสมอ** — `GET /voices` ดีฟอลต์จะไม่คืนเสียงลาวมาปนด้วย ต้องขอผ่าน `?language=lao`
+2. **Voice Design / Voice Cloning แบบไม่ใช้เสียงสต็อก** — `/tts` ด้วย `instruct` + `language: "Lao"`,
+   หรือ `/clone`/`/voices` ด้วยไฟล์เสียงลาวของจริง + `language: "Lao"` — เหมือนภาษาอื่นทุกอย่าง
+
+### คลังเสียงสต็อกภาษาลาว (`voices_lao/`)
+
+แยกเก็บต่างหากจากเสียงสต็อกไทยใน `voices/` โดยตั้งใจ (ไม่ปนรหัส `voice_XX`, ไม่ปนกันในไฟล์
+manifest เดียวกัน) — สร้างด้วย `build_voices_lao.py` (คู่กับ `build_voices.py` ของฝั่งไทย) และ**เสียบเข้า
+`server.py` เป็นเสียงสต็อกใช้งานได้จริงแล้ว** ผ่าน `OmniVoiceEngine._load_extra_manifest()` (โหลดต่อจาก
+เสียงชุดหลัก, ปรับโฟลเดอร์ได้ด้วย env `TTS_LAO_VOICES_DIR`)
+
+| id | คำอธิบาย | instruct | สถานะ |
+|---|---|---|---|
+| `lao_01` | ชาย โทนปกติ | male | ✅ ใช้งานได้ |
+| `lao_02` | หญิง โทนปกติ | female | ✅ ใช้งานได้ |
+| `lao_03` | ชาย วัยทำงานตอนต้น | young adult, male | ✅ ใช้งานได้ |
+| `lao_04` | หญิง โทนสูง สดใส | female, high pitch | ✅ ใช้งานได้ |
+| `lao_05` | ชาย สูงวัย ใจดี | elderly, male, very low pitch | ⏳ รอ GPU |
+| `lao_06` | หญิง วัยรุ่น | teenager, female | ⏳ รอ GPU |
+| `lao_07` | หญิง วัยกลางคน สง่างาม | middle-aged, female, high pitch | ⏳ รอ GPU |
+| `lao_08` | ชาย กระซิบ | male, whisper | ⏳ รอ GPU |
+
+ใช้เหมือนเสียงสต็อกไทยทุกประการ:
+```json
+{ "voice_id": "lao_01", "text": "ສະບາຍດີ ມື້ນີ້ອາກາດດີຫຼາຍເລີຍ" }
+```
+ไม่ต้องส่ง `language` เอง — ถ้าไม่ระบุมา ระบบ fallback ไปใช้ `"Lao"` จาก manifest ของเสียงนั้นให้อัตโนมัติ
+(กันเคสออกเสียงผิดตอนข้อความมีแต่ตัวเลข/สัญลักษณ์ที่เดาภาษาจาก unicode ไม่ได้) ส่วนข้อความที่เป็นตัวอักษร
+ลาวจริง (unicode 0x0E80–0x0EFF) ระบบ `mixed_language` ที่เปิดอยู่โดยดีฟอลต์ตรวจจับให้เองอยู่แล้วเช่นกัน
+
+`lao_05`-`lao_08` เตรียม preset ไว้ใน `build_voices_lao.py` แล้ว แต่ยังสร้างไม่ได้เพราะ **GPU บนเครื่องนี้
+ใช้งานไม่ได้ชั่วคราว** (`torch.cuda.is_available()` เป็น `False`) — รันคำสั่งนี้ทันทีที่ GPU กลับมาใช้ได้
+(เสียง 4 ตัวแรกจะข้ามอัตโนมัติเพราะมีไฟล์อยู่แล้ว):
+```bash
+venv/Scripts/python.exe build_voices_lao.py --device cuda
+```
+
+---
+
 ## ASR — ถอดเสียงเป็นข้อความ
 
 ### `POST /transcribe` (multipart/form-data)
@@ -170,7 +260,29 @@ data: {"done":true,"total_duration":9.4,"credits_charged":9.4}
 
 **Response** `200` → `{ "text": "ข้อความที่ถอดได้" }`
 
-> ครั้งแรกจะโหลดโมเดล Whisper (~1.5GB, ดาวน์โหลดครั้งเดียว) — request แรกช้ากว่าปกติ
+> ใช้ faster-whisper (CTranslate2 backend, เร็วกว่า transformers Whisper เดิมมาก) — ครั้งแรกจะโหลด
+> โมเดล (~1.5GB, ดาวน์โหลดครั้งเดียว) request แรกช้ากว่าปกติ — ปรับโมเดล/device ได้ด้วย env
+> `TTS_ASR_MODEL` / `TTS_ASR_DEVICE` / `TTS_ASR_COMPUTE_TYPE` (ดู `asr_engine.py`)
+
+---
+
+## ลดเสียงรบกวน + เพิ่มความชัด (Enhance)
+
+### `POST /enhance` (multipart/form-data)
+แยกเสียงพูดออกจากเสียงพื้นหลัง/ดนตรี/สัญญาณรบกวน (Demucs) + normalize ความดัง — คืนไฟล์เสียงที่
+ทำความสะอาดแล้ว ใช้เดี่ยวๆ ได้ หรือปล่อยให้ `/clone`, `/voices` เรียกให้อัตโนมัติผ่าน `enhance_ref`
+(ดีฟอลต์เปิดอยู่แล้วที่สองจุดนั้น — ใช้ `/enhance` ตรงๆ เมื่อต้องการแค่ทำความสะอาดไฟล์โดยไม่โคลนเสียง)
+
+| field | type | required | รายละเอียด |
+|---|---|---|---|
+| `audio` | file | ✅ | ไฟล์เสียงที่ต้องการลดเสียงรบกวน/เพิ่มความชัด |
+
+**Response** `200`
+```json
+{ "audio_base64": "UklGR...", "format": "wav", "sample_rate": 44100, "duration": 3.2 }
+```
+> ล้มเหลว/ไม่ได้ติดตั้ง Demucs → ยัง `200` ปกติแต่คืนไฟล์เดิม (normalize ความดังอย่างเดียว) ไม่ throw
+> ปรับโมเดลได้ด้วย env `TTS_ENHANCE_MODEL` (ดีฟอลต์ `htdemucs`, ดู `audio_enhance.py`)
 
 ---
 
@@ -252,5 +364,5 @@ while (true) {
 ## หมายเหตุการใช้งาน
 - **สร้างเสียงทีละงาน** — โมเดลประมวลผลแบบ serialize (มีคิวภายใน)
 - **ความเร็ว:** GPU ~1 วิ/ประโยค, CPU ~25–30 วิ/ประโยค
-- **เสียงที่เปิด:** ปรับผ่าน env `TTS_VOICE_IDS` — ดู `DEPLOY.md`
+- **เสียงที่เปิด:** ปรับผ่าน env `TTS_VOICE_IDS` (เสียงชุดหลัก) / `TTS_LAO_VOICES_DIR` (เสียงลาว) — ดู `DEPLOY.md`
 - Swagger UI ทดสอบสดที่ `GET /docs`

@@ -38,3 +38,9 @@ __pycache__/
 
 # LLM transliteration cache (runtime-generated, machine-specific)
 translit_cache.json
+
+# A/B test scratch output + manifest backups (regenerated locally, not source)
+ab_output/
+voices/*.bak-*
+out.txt
+*.mp4

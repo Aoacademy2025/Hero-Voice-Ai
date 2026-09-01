@@ -137,13 +137,6 @@ VOICE_PRESETS = [
         "ref_text": "สวัสดีจ้ะหลาน วันนี้เป็นยังไงบ้าง",
         "desc": "เสียงผู้หญิงสูงวัย",
     },
-    # --- สำเนียงภาษาอังกฤษ (ใช้กับข้อความอังกฤษ) ---
-    {
-        "id": "voice_16",
-        "instruct": "female, british accent",
-        "ref_text": "Hello, welcome to our service today.",
-        "desc": "เสียงผู้หญิง สำเนียงอังกฤษ (British)",
-    },
     # --- เพิ่มเติม: เด็กแยกเพศ, วัยรุ่นชายเพิ่ม, pitch กลาง, สำเนียงเพิ่ม ---
     {
         "id": "voice_17",
@@ -205,49 +198,10 @@ VOICE_PRESETS = [
         "ref_text": "ยายดีใจมากเลยที่หลานมาเยี่ยม",
         "desc": "เสียงผู้หญิงสูงวัย โทนสูง อบอุ่น",
     },
-    {
-        "id": "voice_27",
-        "instruct": "male, british accent",
-        "ref_text": "Thank you for choosing us, we are happy to help.",
-        "desc": "เสียงผู้ชาย สำเนียงอังกฤษ (British)",
-    },
-    {
-        "id": "voice_28",
-        "instruct": "male, american accent",
-        "ref_text": "Hello, welcome to our service today.",
-        "desc": "เสียงผู้ชาย สำเนียงอเมริกัน",
-    },
-    {
-        "id": "voice_29",
-        "instruct": "female, american accent",
-        "ref_text": "Thank you for choosing us, we are happy to help.",
-        "desc": "เสียงผู้หญิง สำเนียงอเมริกัน",
-    },
-    {
-        "id": "voice_30",
-        "instruct": "male, australian accent",
-        "ref_text": "It is a beautiful day to start something new.",
-        "desc": "เสียงผู้ชาย สำเนียงออสเตรเลีย",
-    },
-    {
-        "id": "voice_31",
-        "instruct": "female, australian accent",
-        "ref_text": "Feel free to ask if you have any questions.",
-        "desc": "เสียงผู้หญิง สำเนียงออสเตรเลีย",
-    },
-    {
-        "id": "voice_32",
-        "instruct": "male, whisper",
-        "ref_text": "ฟังดีๆ นะครับ เรื่องนี้เป็นความลับระหว่างเรา",
-        "desc": "เสียงผู้ชาย กระซิบ",
-    },
+    # เอาเสียงกระซิบออก (voice_32 male/whisper, voice_33 female/whisper) — ฟังแล้วไม่เป็นธรรมชาติ
+    # ไฟล์ .wav เดิมยังอยู่ใน voices/ เผื่อเอากลับมาใช้ทีหลัง แค่ไม่สร้างซ้ำ/ไม่เสิร์ฟจาก server.py แล้ว
+    # (ดู _FOREIGN_ACCENT_IDS ใน server.py — 32, 33 ถูกกันออกที่นั่นด้วยเหมือนกัน)
     # --- ชุดเพิ่มเติมรอบ 2: เติมช่องว่าง ไม่ไล่โทนซ้ำ ---
-    {
-        "id": "voice_33",
-        "instruct": "female, whisper",
-        "ref_text": "ฟังดีๆ นะคะ เรื่องนี้เป็นความลับระหว่างเรา",
-        "desc": "เสียงผู้หญิง กระซิบ",
-    },
     {
         "id": "voice_34",
         "instruct": "teenager, female, low pitch",
@@ -273,42 +227,6 @@ VOICE_PRESETS = [
         "desc": "เสียงเด็ก โทนสูงมาก ซุกซน",
     },
     {
-        "id": "voice_38",
-        "instruct": "male, canadian accent",
-        "ref_text": "Please hold on a moment while we process your request.",
-        "desc": "เสียงผู้ชาย สำเนียงแคนาดา",
-    },
-    {
-        "id": "voice_39",
-        "instruct": "female, canadian accent",
-        "ref_text": "Have a wonderful day ahead.",
-        "desc": "เสียงผู้หญิง สำเนียงแคนาดา",
-    },
-    {
-        "id": "voice_40",
-        "instruct": "male, indian accent",
-        "ref_text": "We hope you enjoy your experience with us.",
-        "desc": "เสียงผู้ชาย สำเนียงอินเดีย",
-    },
-    {
-        "id": "voice_41",
-        "instruct": "female, indian accent",
-        "ref_text": "It is a pleasure to meet you today.",
-        "desc": "เสียงผู้หญิง สำเนียงอินเดีย",
-    },
-    {
-        "id": "voice_42",
-        "instruct": "male, chinese accent",
-        "ref_text": "Let me share some good news with you.",
-        "desc": "เสียงผู้ชาย สำเนียงจีน",
-    },
-    {
-        "id": "voice_43",
-        "instruct": "female, chinese accent",
-        "ref_text": "Here is the information you requested.",
-        "desc": "เสียงผู้หญิง สำเนียงจีน",
-    },
-    {
         "id": "voice_44",
         "instruct": "young adult, male, very high pitch",
         "ref_text": "โอ้โห เยี่ยมไปเลยครับ ดีใจด้วยจริงๆ",
@@ -332,12 +250,9 @@ VOICE_PRESETS = [
         "ref_text": "ยายอยู่ตรงนี้เสมอนะ ไม่ต้องห่วง",
         "desc": "เสียงผู้หญิงสูงวัย โทนต่ำมาก อ่อนโยน",
     },
-    {
-        "id": "voice_48",
-        "instruct": "male, korean accent",
-        "ref_text": "Have a wonderful day ahead.",
-        "desc": "เสียงผู้ชาย สำเนียงเกาหลี",
-    },
+    # เอาสำเนียงชาติอื่นออกก่อน (british/american/australian/canadian/indian/chinese/korean
+    # accent — เดิม voice_16, 27-31, 38-43, 48) ไฟล์ .wav เดิมยังอยู่ใน voices/ เผื่อเอากลับมาใช้
+    # ทีหลัง แค่ไม่สร้างซ้ำ/ไม่เสิร์ฟจาก server.py แล้ว (ดู _FOREIGN_ACCENT_IDS ใน server.py)
 ]
 
 def main():

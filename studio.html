@@ -97,7 +97,25 @@
     <div class="row">
       <div><label>เอนจิน</label><select id="ttsEngine"></select></div>
       <div id="emotionField" style="display:none"><label>อารมณ์ (emotion)</label>
-        <input id="ttsEmotion" placeholder="เช่น happy, sad, angry, excited"></div>
+        <select id="ttsEmotion">
+          <option value="">— ไม่ใส่ —</option>
+          <option value="happy">happy (ดีใจ)</option>
+          <option value="excited">excited (ตื่นเต้น)</option>
+          <option value="sad">sad (เศร้า)</option>
+          <option value="angry">angry (โกรธ)</option>
+          <option value="calm">calm (สงบ)</option>
+          <option value="fear">fear (กลัว)</option>
+          <option value="surprised">surprised (ประหลาดใจ)</option>
+          <option value="neutral">neutral (ปกติ)</option>
+          <option value="disgust">disgust (รังเกียจ)</option>
+          <option value="gentle">gentle (อ่อนโยน)</option>
+          <option value="confident">confident (มั่นใจ)</option>
+          <option value="serious">serious (จริงจัง)</option>
+          <option value="playful">playful (ขี้เล่น)</option>
+          <option value="tired">tired (เหนื่อย/ง่วง)</option>
+          <option value="nervous">nervous (ประหม่า/กังวล)</option>
+        </select>
+        <div class="hint">เอนจิน OmniVoice: ปรับ pitch/ความเร็วเสียงเท่านั้น (ไม่ใช่โมเดลปรับ) — IndexTTS-2 ปรับน้ำเสียงจริง</div></div>
     </div>
     <div class="row3">
       <div><label>เสียง</label><select id="ttsVoice"></select></div>
