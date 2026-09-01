@@ -12,6 +12,7 @@ venv_*/
 # Model weights (โหลดแยก — ใหญ่เกินจะ commit)
 model/
 model_dl/
+indextts2_model/
 
 # Runtime data
 logs/

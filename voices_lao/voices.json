@@ -1,0 +1,34 @@
+[
+  {
+    "id": "lao_01",
+    "desc": "เสียงผู้ชาย ภาษาลาว โทนปกติ",
+    "instruct": "male",
+    "language": "Lao",
+    "ref_audio": "lao_01.wav",
+    "ref_text": "ສະບາຍດີ ຍິນດີຕ້ອນຮັບເຂົ້າສູ່ບໍລິການຂອງພວກເຮົາ"
+  },
+  {
+    "id": "lao_02",
+    "desc": "เสียงผู้หญิง ภาษาลาว โทนปกติ",
+    "instruct": "female",
+    "language": "Lao",
+    "ref_audio": "lao_02.wav",
+    "ref_text": "ສະບາຍດີ ຍິນດີໃຫ້ບໍລິການທ່ານໃນມື້ນີ້"
+  },
+  {
+    "id": "lao_03",
+    "desc": "เสียงผู้ชาย ภาษาลาว วัยทำงานตอนต้น",
+    "instruct": "young adult, male",
+    "language": "Lao",
+    "ref_audio": "lao_03.wav",
+    "ref_text": "ຂອບໃຈທີ່ໃຊ້ບໍລິການ ຫວັງວ່າຈະໄດ້ຮ່ວມງານກັນອີກ"
+  },
+  {
+    "id": "lao_04",
+    "desc": "เสียงผู้หญิง ภาษาลาว โทนสูง สดใส",
+    "instruct": "female, high pitch",
+    "language": "Lao",
+    "ref_audio": "lao_04.wav",
+    "ref_text": "ສະບາຍດີ ມີຫຍັງໃຫ້ຊ່ວຍບໍ່ ມື້ນີ້ອາກາດດີຫຼາຍເລີຍ"
+  }
+]
