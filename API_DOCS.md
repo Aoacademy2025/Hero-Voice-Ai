@@ -11,14 +11,7 @@ API แปลงข้อความเป็นเสียงพูด (Thai/
 > **หมายเหตุ instruct:** `instruct` = *ออกแบบเสียง* ไม่ใช่ *อารมณ์*
 > รองรับเฉพาะ: เพศ (male/female), อายุ (child/teenager/young adult/middle-aged/elderly),
 > pitch (very low/low/moderate/high/very high pitch), whisper, สำเนียง (british accent ฯลฯ)
-> — happy/sad/angry ใส่ใน `instruct` **ใช้ไม่ได้**
->
-> **อารมณ์จริงๆ ใช้ parameter แยก `emotion`** (ดูฟิลด์ `emotion` ใน `/tts`) — ค่าที่ใช้ได้:
-> `happy`, `excited`, `sad`, `angry`, `calm`, `fear`, `surprised`, `neutral`, `disgust`, `gentle`,
-> `confident`, `serious`, `playful`, `tired`, `nervous` (หรือคำไทย เช่น ดีใจ/เศร้า/โกรธ/ตื่นเต้น/
-> มั่นใจ/จริงจัง — ดูรายการเต็มที่ `emotion_fx.ALLOWED`) engine `omnivoice` (ดีฟอลต์): ปรับ
-> pitch/ความเร็วแบบ DSP หลัง generate เสร็จ (ประมาณคร่าวๆ ใช้ได้แม้ไม่มี GPU) — engine
-> `indextts2`: โมเดลปรับน้ำเสียงจริง (ต้อง GPU + ติดตั้งเพิ่ม, ดู `TTS_ENABLE_INDEXTTS`)
+> — happy/sad/angry ใส่ใน `instruct` **ใช้ไม่ได้** (ระบบไม่มีฟีเจอร์ควบคุมอารมณ์แยกต่างหากแล้ว)
 
 ---
 
@@ -33,7 +26,6 @@ API แปลงข้อความเป็นเสียงพูด (Thai/
 | **สลับภาษากลางประโยค (code-switching)** | ตัดข้อความเป็นช่วงตามสคริปต์ (ไทย/ลาว/อังกฤษ) generate แยกภาษาแล้วต่อเสียง กันโมเดลอ่านผิดภาษา | field `mixed_language` ใน `/tts` (ดีฟอลต์เปิด) — ดู `text_utils.split_by_language` |
 | **Voice Cloning (zero-shot)** | โคลนเสียงจากไฟล์อ้างอิง 3-10 วิ ไม่ต้องเทรนโมเดลใหม่ | `/clone` (ครั้งเดียว, best-of-3 + วัด similarity/naturalness อัตโนมัติ), `/voices` (เก็บถาวรใช้ซ้ำ) |
 | **Voice Design** | ออกแบบเสียงจากคำบรรยาย: เพศ, อายุ, pitch, กระซิบ, สำเนียง (ไม่ใช่การโคลนจากไฟล์จริง) | field `instruct` ใน `/tts` |
-| **อารมณ์ (Emotion)** | ปรับน้ำเสียงให้ดีใจ/เศร้า/โกรธ/ตื่นเต้น ฯลฯ | field `emotion` ใน `/tts` — engine `omnivoice`=DSP ประมาณคร่าวๆ, engine `indextts2`=โมเดลปรับจริง (ต้อง GPU) |
 | **สัญลักษณ์ไม่ใช่คำพูด (non-verbal tags)** | แทรกแท็กในข้อความให้ออกเสียงหัวเราะ/ถอนหายใจ/อุทาน เช่น `[laughter]`, `[sigh]`, `[surprise-ah]`, `[question-en]` | ใส่ในข้อความ (`text`) ตรงๆ ได้เลยทุก endpoint — โมเดลอ่านแท็กพวกนี้ตรงๆ ไม่ต้องตั้งค่าเพิ่ม (ดูรายการแท็กทั้งหมดด้านล่าง) |
 | **Streaming** | ตัดข้อความเป็นก้อน ทยอยส่งเสียงทีละก้อนแทนที่จะรอจนจบ | `/tts/stream` (SSE) |
 | **ASR (ถอดเสียง)** | ถอดไฟล์เสียงเป็นข้อความ | `/transcribe`, และอัตโนมัติตอน `/voices` ถ้าไม่ระบุ `ref_text` |
@@ -164,6 +156,7 @@ data: {"done":true,"total_duration":9.4,"credits_charged":9.4}
 | `engine` | string | ❌ | ดีฟอลต์ omnivoice |
 | `language` | string | ❌ | — |
 | `num_step` | int | ❌ | 32 |
+| `guidance_scale` | float | ❌ | ดีฟอลต์ 2.0 — คุมความยึดเสียงต้นฉบับ; 3-4 = คล้ายขึ้นแต่เสี่ยงเพี้ยน |
 | `speed` | float | ❌ | 1.0 |
 | `enhance_ref` | bool | ❌ | true — ลดเสียงรบกวน/normalize ไฟล์ ref อัตโนมัติก่อนโคลน (ปิดได้ถ้าไฟล์สะอาดอยู่แล้ว) |
 
@@ -228,10 +221,12 @@ manifest เดียวกัน) — สร้างด้วย `build_voices
 | `lao_02` | หญิง โทนปกติ | female | ✅ ใช้งานได้ |
 | `lao_03` | ชาย วัยทำงานตอนต้น | young adult, male | ✅ ใช้งานได้ |
 | `lao_04` | หญิง โทนสูง สดใส | female, high pitch | ✅ ใช้งานได้ |
-| `lao_05` | ชาย สูงวัย ใจดี | elderly, male, very low pitch | ⏳ รอ GPU |
-| `lao_06` | หญิง วัยรุ่น | teenager, female | ⏳ รอ GPU |
-| `lao_07` | หญิง วัยกลางคน สง่างาม | middle-aged, female, high pitch | ⏳ รอ GPU |
-| `lao_08` | ชาย กระซิบ | male, whisper | ⏳ รอ GPU |
+| `lao_05` | ชาย สูงวัย ใจดี | elderly, male, very low pitch | ✅ ใช้งานได้ |
+| `lao_06` | หญิง วัยรุ่น | teenager, female | ✅ ใช้งานได้ |
+| `lao_07` | หญิง วัยกลางคน สง่างาม | middle-aged, female, high pitch | ✅ ใช้งานได้ |
+
+> เอาเสียงกระซิบ (`lao_08`, male/whisper) ออกแล้ว — เหมือนที่เอาออกฝั่งไทยไปก่อนหน้านี้ (ฟังแล้วไม่เป็นธรรมชาติ)
+> ไฟล์ `.wav` เดิมยังอยู่ใน `voices_lao/` เผื่อเอากลับมาใช้ทีหลัง
 
 ใช้เหมือนเสียงสต็อกไทยทุกประการ:
 ```json
@@ -241,9 +236,8 @@ manifest เดียวกัน) — สร้างด้วย `build_voices
 (กันเคสออกเสียงผิดตอนข้อความมีแต่ตัวเลข/สัญลักษณ์ที่เดาภาษาจาก unicode ไม่ได้) ส่วนข้อความที่เป็นตัวอักษร
 ลาวจริง (unicode 0x0E80–0x0EFF) ระบบ `mixed_language` ที่เปิดอยู่โดยดีฟอลต์ตรวจจับให้เองอยู่แล้วเช่นกัน
 
-`lao_05`-`lao_08` เตรียม preset ไว้ใน `build_voices_lao.py` แล้ว แต่ยังสร้างไม่ได้เพราะ **GPU บนเครื่องนี้
-ใช้งานไม่ได้ชั่วคราว** (`torch.cuda.is_available()` เป็น `False`) — รันคำสั่งนี้ทันทีที่ GPU กลับมาใช้ได้
-(เสียง 4 ตัวแรกจะข้ามอัตโนมัติเพราะมีไฟล์อยู่แล้ว):
+ตอนนี้เปิดใช้งาน 7 เสียง — เพิ่มเสียงลาวใหม่ได้โดยเติม preset ใน `VOICE_PRESETS` ของ `build_voices_lao.py`
+แล้วรันซ้ำ (เสียงเดิมที่มีไฟล์อยู่แล้วจะข้ามอัตโนมัติ ไม่สร้างทับ):
 ```bash
 venv/Scripts/python.exe build_voices_lao.py --device cuda
 ```

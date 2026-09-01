@@ -30,5 +30,29 @@
     "language": "Lao",
     "ref_audio": "lao_04.wav",
     "ref_text": "ສະບາຍດີ ມີຫຍັງໃຫ້ຊ່ວຍບໍ່ ມື້ນີ້ອາກາດດີຫຼາຍເລີຍ"
+  },
+  {
+    "id": "lao_05",
+    "desc": "เสียงผู้ชาย ภาษาลาว สูงวัย ใจดี",
+    "instruct": "elderly, male, very low pitch",
+    "language": "Lao",
+    "ref_audio": "lao_05.wav",
+    "ref_text": "ສະບາຍດີລູກ ມື້ນີ້ເປັນແນວໃດແດ່"
+  },
+  {
+    "id": "lao_06",
+    "desc": "เสียงผู้หญิง ภาษาลาว วัยรุ่น",
+    "instruct": "teenager, female",
+    "language": "Lao",
+    "ref_audio": "lao_06.wav",
+    "ref_text": "ສະບາຍດີເດີ ມື້ນີ້ອາກາດງາມຫຼາຍເນາະ"
+  },
+  {
+    "id": "lao_07",
+    "desc": "เสียงผู้หญิง ภาษาลาว วัยกลางคน สง่างาม",
+    "instruct": "middle-aged, female, high pitch",
+    "language": "Lao",
+    "ref_audio": "lao_07.wav",
+    "ref_text": "ຂໍເຊີນທ່ານຜູ້ມີກຽດທຸກທ່ານເຂົ້າຮ່ວມງານ"
   }
 ]

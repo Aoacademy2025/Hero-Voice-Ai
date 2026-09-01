@@ -8,35 +8,35 @@
   },
   {
     "id": "voice_02",
-    "desc": "ลลิล",
+    "desc": "นภา",
     "instruct": "female",
     "ref_audio": "voice_02.wav",
     "ref_text": "สวัสดีค่ะ ยินดีให้บริการนะคะ"
   },
   {
     "id": "voice_03",
-    "desc": "ชิน",
+    "desc": "ปิติ",
     "instruct": "male, high pitch",
     "ref_audio": "voice_03.wav",
     "ref_text": "วันนี้เป็นวันที่ดีมากเลยนะครับ"
   },
   {
     "id": "voice_04",
-    "desc": "มิรา",
+    "desc": "ไพลิน",
     "instruct": "female, low pitch",
     "ref_audio": "voice_04.wav",
     "ref_text": "ขอบคุณที่ใช้บริการของเรานะคะ"
   },
   {
     "id": "voice_05",
-    "desc": "กฤต",
+    "desc": "วีระ",
     "instruct": "male, very low pitch",
     "ref_audio": "voice_05.wav",
     "ref_text": "ขอเชิญรับฟังประกาศสำคัญครับ"
   },
   {
     "id": "voice_06",
-    "desc": "ปริม",
+    "desc": "แพรว",
     "instruct": "female, very high pitch",
     "ref_audio": "voice_06.wav",
     "ref_text": "หวัดดีค่ะ วันนี้มีอะไรให้ช่วยไหมคะ"
@@ -50,21 +50,21 @@
   },
   {
     "id": "voice_08",
-    "desc": "อินท์",
+    "desc": "แนน",
     "instruct": "teenager, female",
     "ref_audio": "voice_08.wav",
     "ref_text": "หวัดดีค่ะ วันนี้อากาศดีจังเลย"
   },
   {
     "id": "voice_09",
-    "desc": "ภีม",
+    "desc": "แบงค์",
     "instruct": "teenager, male",
     "ref_audio": "voice_09.wav",
     "ref_text": "โย่ว วันนี้มีอะไรสนุกๆ บ้างครับ"
   },
   {
     "id": "voice_10",
-    "desc": "ณดา",
+    "desc": "ณิชา",
     "instruct": "young adult, female",
     "ref_audio": "voice_10.wav",
     "ref_text": "สวัสดีค่ะ ยินดีที่ได้ร่วมงานด้วยนะคะ"

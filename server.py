@@ -17,10 +17,6 @@ server.py — Hero Voice TTS API (v2)
           pitch(very low/low/moderate/high/very high pitch), style(whisper),
           accent(american/british/australian accent, ...) — แต่ละหมวด <=1 คำ คั่นด้วย ", "
 
-อารมณ์ (emotion) จริงๆ ที่โมเดลปรับ prosody เอง มีแค่ IndexTTS-2 (ต้อง GPU) — engine หลัก
-OmniVoice เองไม่รองรับ แต่เปิดให้ใช้ emotion ได้ด้วยเหมือนกันผ่าน emotion_fx.py (ปรับ pitch/
-speed แบบ DSP หลัง generate เสร็จ เป็นการประมาณคร่าวๆ ไม่ใช่โมเดลปรับ ใช้ได้แม้ไม่มี GPU)
-
 รัน:
   python build_voices.py     # ครั้งเดียว สร้างคลังเสียง
   python server.py           # http://0.0.0.0:8000  (Swagger: /docs)
@@ -138,9 +134,6 @@ class OmniVoiceEngine:
     sample_rate = SAMPLE_RATE
     supports_clone = True
     supports_design = True
-    # อารมณ์แบบ DSP หลัง generate เสร็จ (pitch/speed) ไม่ใช่ prosody จริงแบบ IndexTTS-2
-    # (โมเดล OmniVoice เองไม่รองรับอารมณ์) — ดู emotion_fx.py, ใช้งานได้แม้ไม่มี GPU
-    supports_emotion = True
 
     def __init__(self):
         self.model = None
@@ -433,22 +426,6 @@ async def _generate_serialized(fn, *args, **kwargs):
             return await asyncio.to_thread(fn, *args, **kwargs)
 
 
-async def _apply_emotion(emotion: str, wav: np.ndarray) -> np.ndarray:
-    """ใส่อารมณ์แบบ DSP (emotion_fx.py) ให้ wav ที่ generate เสร็จแล้ว — ไม่แตะโมเดล
-    เลยไม่ต้องเข้าคิว sem/lock เหมือน generate แค่ offload ไป thread เพราะ librosa เป็น CPU-bound
-    ปรับ pitch/speed แล้วฝัง watermark ซ้ำ (การปรับ pitch/tempo อาจทำให้ watermark เดิมเพี้ยน)"""
-    import emotion_fx
-
-    def _run():
-        try:
-            out = emotion_fx.apply(wav, SAMPLE_RATE, emotion)
-        except ValueError as e:
-            raise HTTPException(422, str(e))
-        return watermark.apply(out, SAMPLE_RATE)
-
-    return await asyncio.to_thread(_run)
-
-
 # ── models ──────────────────────────────────────────────────────────
 class TTSRequest(BaseModel):
     text: str = Field(..., min_length=1)
@@ -475,12 +452,6 @@ class TTSRequest(BaseModel):
     normalize_numbers: bool = Field(True,
         description="แปลงตัวเลข (จำนวน/เงินบาท/เบอร์โทร) เป็นคำอ่านภาษาไทยก่อนอ่าน "
                     "กันปัญหาสคริปต์กับเสียงที่ได้ไม่ตรงกันตอนมีตัวเลข (ดู text_utils.normalize_thai_numbers)")
-    emotion: Optional[str] = Field(None,
-        description="อารมณ์ — engine='omnivoice': ปรับ pitch/speed หลัง generate (DSP, ไม่ใช่โมเดล; "
-                    "ดู emotion_fx.py, ใช้ได้แม้ไม่มี GPU); engine='indextts2': โมเดลปรับ prosody จริง "
-                    "(genuine, ต้อง GPU). ค่าที่ใช้ได้ (หรือคำไทย เช่น ดีใจ/เศร้า/โกรธ ดู emotion_fx.ALLOWED): "
-                    "happy, excited, sad, angry, calm, fear, surprised, neutral, disgust, gentle, "
-                    "confident, serious, playful, tired, nervous")
 
 
 class TTSResponse(BaseModel):
@@ -526,7 +497,6 @@ async def engines():
     return [
         {"id": e.id, "name": e.name, "sample_rate": e.sample_rate,
          "supports_clone": e.supports_clone, "supports_design": e.supports_design,
-         "supports_emotion": getattr(e, "supports_emotion", False),
          "num_voices": len(e.voices)}
         for e in ENGINES.values()
     ]
@@ -575,14 +545,14 @@ async def me(keyrec=Depends(auth)):
 async def tts(req: TTSRequest, keyrec=Depends(auth)):
     eng = get_engine(req.engine)
 
-    # เอนจินอื่นที่รับ ref ตรงๆ (เช่น IndexTTS) — ใช้ .synth() รองรับอารมณ์
+    # เอนจินอื่นที่รับ ref ตรงๆ (เช่น IndexTTS) — ใช้ .synth()
     if eng.id != "omnivoice":
         if not req.voice_id:
             raise HTTPException(422, f"เอนจิน '{eng.id}' ต้องระบุ voice_id (เสียง ref)")
         ref_wav, ref_text = resolve_ref(req.voice_id, keyrec)
         t = time.time()
         wav, _ = await _generate_serialized(eng.synth, req.text, ref_wav,
-                                            ref_text, req.emotion, req.speed)
+                                            ref_text, speed=req.speed)
         gen_time = time.time() - t
         duration = len(wav) / SAMPLE_RATE
         cost = charge(keyrec, duration, "tts")
@@ -623,9 +593,6 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
             language=lang, speed=req.speed, num_step=req.num_step,
             guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
         )
-    if req.emotion:
-        wav = await _apply_emotion(req.emotion, wav)
-        duration = len(wav) / SAMPLE_RATE
     gen_time = time.time() - t
     cost = charge(keyrec, duration, "tts")
     return TTSResponse(
@@ -663,9 +630,6 @@ async def tts_stream(req: TTSRequest, keyrec=Depends(auth)):
                 language=lang, speed=req.speed, num_step=req.num_step,
                 guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
             )
-            if req.emotion:
-                wav = await _apply_emotion(req.emotion, wav)
-                dur = len(wav) / SAMPLE_RATE
             total_dur += dur
             evt = {"index": i, "total": len(chunks), "text": chunk,
                    "audio_base64": b64(wav_bytes(wav)), "duration": round(dur, 2)}

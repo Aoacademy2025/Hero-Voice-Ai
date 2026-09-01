@@ -1,5 +1,5 @@
 """
-engine_indextts.py — เอนจินที่ 2: IndexTTS-2 (cloning เหมือนสูง + คุมอารมณ์)
+engine_indextts.py — เอนจินที่ 2: IndexTTS-2 (cloning เหมือนสูง)
 
 เป็น optional engine — โหลดเฉพาะเมื่อ:
   1) ตั้ง env TTS_ENABLE_INDEXTTS=1
@@ -17,10 +17,10 @@ engine_indextts.py — เอนจินที่ 2: IndexTTS-2 (cloning เห
 — รวมการเรียก vendor ไว้ที่เดียวเพื่อแก้ง่าย
 
 interface ให้ตรงกับที่ server เรียก:
-  .id .name .sample_rate .supports_clone .supports_design .supports_emotion
+  .id .name .sample_rate .supports_clone .supports_design
   .load()
   .list_voices() -> []                      (ไม่มีเสียงสต็อกของตัวเอง)
-  .synth(text, ref_wav, ref_text=None, emotion=None, speed=1.0) -> (np.ndarray float32, 24000)
+  .synth(text, ref_wav, ref_text=None, speed=1.0) -> (np.ndarray float32, 24000)
 """
 import io
 import os
@@ -43,7 +43,6 @@ class IndexTTS2Engine:
     sample_rate = SAMPLE_RATE
     supports_clone = True
     supports_design = False
-    supports_emotion = True   # คุมอารมณ์ผ่านข้อความ (emo_text) — เติมช่องว่างที่ OmniVoice ทำไม่ได้
 
     def __init__(self):
         self.tts = None
@@ -64,20 +63,16 @@ class IndexTTS2Engine:
     def list_voices(self):
         return []
 
-    def _synth_to_file(self, text, ref_wav, out_path, emotion=None):
+    def _synth_to_file(self, text, ref_wav, out_path):
         """เรียก vendor API — รวมไว้ที่เดียว (ปรับตามเวอร์ชัน IndexTTS ที่ติดตั้งได้)"""
-        kwargs = dict(spk_audio_prompt=ref_wav, text=text, output_path=out_path, verbose=False)
-        if emotion:
-            # คุมอารมณ์ด้วยคำบรรยาย เช่น "happy", "sad", "angry", "excited"
-            kwargs.update(use_emo_text=True, emo_text=emotion)
-        self.tts.infer(**kwargs)
+        self.tts.infer(spk_audio_prompt=ref_wav, text=text, output_path=out_path, verbose=False)
 
-    def synth(self, text, ref_wav, ref_text=None, emotion=None, speed=1.0):
+    def synth(self, text, ref_wav, ref_text=None, speed=1.0):
         """สร้างเสียง → คืน (wav float32 @24k, 24000). ref_text ไม่จำเป็นสำหรับ IndexTTS"""
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             out_path = tmp.name
         try:
-            self._synth_to_file(text, ref_wav, out_path, emotion=emotion)
+            self._synth_to_file(text, ref_wav, out_path)
             wav, sr = sf.read(out_path, dtype="float32")
         finally:
             if os.path.exists(out_path):

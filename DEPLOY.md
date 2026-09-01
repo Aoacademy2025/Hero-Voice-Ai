@@ -145,10 +145,10 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 
 ---
 
-## เอนจินที่ 2: IndexTTS-2 (cloning เหมือนสูง + อารมณ์) — optional
+## เอนจินที่ 2: IndexTTS-2 (cloning เหมือนสูง) — optional
 
 OmniVoice เก่งหลายภาษา/ออกแบบเสียง แต่ cloning ไม่เป๊ะ. IndexTTS-2 โคลนเหมือนกว่ามาก
-และคุมอารมณ์ได้ (happy/sad/angry...) — เปิดใช้เฉพาะบน **GPU**:
+— เปิดใช้เฉพาะบน **GPU**:
 
 ```bash
 # 1) ติดตั้ง (ดู repo index-tts/index-tts)
@@ -162,7 +162,7 @@ export INDEXTTS_CFG=/models/indextts2/config.yaml
 python server.py
 ```
 - โหลดไม่สำเร็จ (ไม่ติดตั้ง/ไม่มี GPU) → server ข้ามไป ใช้ OmniVoice ต่อได้ปกติ
-- เรียกใช้: `POST /tts {"engine":"indextts2","voice_id":"cv_...","text":"...","emotion":"happy"}`
+- เรียกใช้: `POST /tts {"engine":"indextts2","voice_id":"cv_...","text":"..."}`
 - ใช้เสียง ref ร่วมกับ OmniVoice ได้ (เสียงสต็อก + เสียงโคลนถาวรจากคลังเดียวกัน)
 - ⚠️ dependency (torch ฯลฯ) อาจชนกับ OmniVoice — ถ้าชน แนะนำรัน IndexTTS แยก container/venv
   แล้วให้ทั้งสองใช้ `custom_voices/` volume เดียวกัน
