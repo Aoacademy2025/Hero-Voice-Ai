@@ -99,6 +99,10 @@ BASE_SPEED = float(os.environ.get("TTS_BASE_SPEED", "0.65"))
 DEFAULT_CLASS_TEMPERATURE = float(os.environ.get("TTS_CLASS_TEMPERATURE", "0.4"))
 
 # เอนจินที่ 2: IndexTTS-2 (cloning เหมือนสูง + อารมณ์) — เปิดด้วย TTS_ENABLE_INDEXTTS=1 (ต้อง GPU + ติดตั้ง)
+# ⚠️ ปิดไว้ก่อนโดยตั้งใจ (2026-09-02) — IndexTTS-2 อ่านภาษาไทยไม่ได้จริง (BPE tokenizer
+# มองข้อความไทยทั้งประโยคเป็น unknown token ตัวเดียว → ได้แค่เสียงพึมพำ ไม่ใช่คำพูดจริง —
+# ดู generate_emotion_training_data.py หัวไฟล์) โปรเจกต์นี้เน้นภาษาไทยเป็นหลัก จึงไม่ควร
+# เปิดใช้ engine นี้จนกว่าจะเจอโมเดลอารมณ์ที่รองรับไทยจริง หรือมีทางแก้ปัญหา tokenizer นี้
 ENABLE_INDEXTTS = os.environ.get("TTS_ENABLE_INDEXTTS", "") == "1"
 
 # auth: ถ้าตั้ง TTS_CREDITS_DB → ใช้ระบบเครดิต (หลาย key แยกยอด); ไม่งั้นใช้ TTS_API_KEY เดี่ยว
@@ -452,6 +456,9 @@ class TTSRequest(BaseModel):
     normalize_numbers: bool = Field(True,
         description="แปลงตัวเลข (จำนวน/เงินบาท/เบอร์โทร) เป็นคำอ่านภาษาไทยก่อนอ่าน "
                     "กันปัญหาสคริปต์กับเสียงที่ได้ไม่ตรงกันตอนมีตัวเลข (ดู text_utils.normalize_thai_numbers)")
+    emotion: Optional[str] = Field(None,
+        description="อารมณ์ (เฉพาะเอนจินที่รองรับ — engine=\"indextts2\") เช่น 'happy','sad','angry','excited' "
+                    "OmniVoice ไม่รองรับพารามิเตอร์นี้ (ค่าจะถูกเพิกเฉย)")
 
 
 class TTSResponse(BaseModel):
@@ -552,7 +559,7 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
         ref_wav, ref_text = resolve_ref(req.voice_id, keyrec)
         t = time.time()
         wav, _ = await _generate_serialized(eng.synth, req.text, ref_wav,
-                                            ref_text, speed=req.speed)
+                                            ref_text, emotion=req.emotion, speed=req.speed)
         gen_time = time.time() - t
         duration = len(wav) / SAMPLE_RATE
         cost = charge(keyrec, duration, "tts")

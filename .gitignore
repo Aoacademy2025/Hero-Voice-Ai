@@ -44,3 +44,7 @@ ab_output/
 voices/*.bak-*
 out.txt
 *.mp4
+
+# เครื่องมือรันเฉพาะเครื่อง — มักฝัง API key จริง (เช่น start-heroai.ps1) ห้าม commit
+start-*.ps1
+*.local.ps1
