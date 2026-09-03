@@ -4,7 +4,12 @@ test_naturalness.py — ตรวจสอบว่าการต่อเส�
 จำลอง logic เดียวกับ server.py /tts (mixed_language=True) เป๊ะ แล้ววัดค่าแอมพลิจูด
 ตรงรอยต่อของแต่ละท่อน — ถ้ากระโดดแรง (ไม่ค่อยๆ ลดลงเป็นศูนย์ก่อนตัด) = มีรอยคลิกจริง
 """
+import sys
+from pathlib import Path
+
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
 
 from server import OmniVoiceEngine, SAMPLE_RATE
 from text_utils import split_by_language

@@ -113,7 +113,8 @@ ENGLISH_TO_THAI = {
 
 _ENGLISH_WORD_RE = re.compile(r"[A-Za-z]+(?:['\-][A-Za-z]+)*")
 
-_BUNDLED_DICT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+# data/ อยู่ที่รากรีโป (ไปอีกชั้นจาก core/) ไม่ได้ย้ายมาด้วยตอนจัดระเบียบโฟลเดอร์
+_BUNDLED_DICT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                    "data", "en_th_transliteration.tsv")
 
 

@@ -4,10 +4,14 @@ test_runpod_handler.py — ทดสอบ runpod_handler.handler() ตรงๆ
 จำลอง job แบบเดียวกับที่ RunPod cloud จะส่งมา (dict {"input": {...}})
 ไม่ต้องมีบัญชี RunPod หรือ deploy จริง — ใช้พิสูจน์ว่า logic ถูกต้องก่อนขึ้น cloud
 
-รัน: python test_runpod_handler.py
+รัน: python tests/test_runpod_handler.py
 """
 import base64
 import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
 
 from runpod_handler import handler
 

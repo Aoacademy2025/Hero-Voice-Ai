@@ -27,8 +27,10 @@ RUN pip install --no-cache-dir --no-deps /app/OmniVoice \
     && pip install --no-cache-dir \
         accelerate pydub tensorboardX webdataset numpy soundfile librosa
 
-# 4) โค้ด server + คลังเสียง
-COPY server.py build_voices.py credits.py text_utils.py manage_keys.py voice_library.py engine_indextts.py voice_similarity.py studio.html ./
+# 4) โค้ด server + สคริปต์ — ก็อปทั้งโฟลเดอร์ทับซ้อนโครงสร้างเดียวกับ host (ดูคอมเมนต์ใน Dockerfile หลัก)
+COPY core/ /app/core/
+COPY scripts/ /app/scripts/
+COPY data/ /app/data/
 COPY model/ /app/model/
 COPY voices/ /app/voices/
 
@@ -41,4 +43,4 @@ ENV TTS_MODEL_DIR=/app/model \
 EXPOSE 8000
 
 # CPU-only + 2 vCPU -> generate ทีละงาน (MAX_CONCURRENCY=1) กันแย่ง CPU จนช้าลงอีก
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "core/server.py"]

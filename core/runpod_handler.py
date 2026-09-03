@@ -27,7 +27,7 @@ Output (job สำเร็จ):
 Output (error): {"error": "ข้อความอธิบาย"}
 
 ทดสอบ logic นี้แบบไม่ต้องพึ่ง RunPod cloud เลย:
-  python test_runpod_handler.py
+  python tests/test_runpod_handler.py
 """
 import base64
 import os

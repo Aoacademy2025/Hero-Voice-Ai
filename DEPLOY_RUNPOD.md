@@ -20,13 +20,18 @@
 ## วิธี C: ไม่ต้อง Docker, ไม่ต้อง git — โหลดโมเดลสดจาก Hugging Face (แนะนำสำหรับมือใหม่)
 
 ### ขั้น 1 (บนเครื่องคุณ ฟรี) — เตรียมไฟล์ที่ต้องอัปโหลด
-ไม่ต้องเอา `model/` ไปด้วย (จะโหลดสดบน Pod) — zip แค่นี้:
+ไม่ต้องเอา `model/` ไปด้วย (จะโหลดสดบน Pod) — zip แค่นี้ (รักษาโครงสร้างโฟลเดอร์ `core/`/`scripts/` ไว้):
 ```
-server.py build_voices.py credits.py text_utils.py manage_keys.py
-voice_library.py engine_indextts.py voice_similarity.py studio.html
-requirements.txt OmniVoice/ voices/
+core/   (server.py, studio.html, credits.py, text_utils.py, voice_library.py,
+         voice_similarity.py, asr_engine.py, audio_enhance.py,
+         watermark.py, gemini_translit.py, runpod_handler.py)
+scripts/build_voices.py
+scripts/manage_keys.py
+requirements.txt OmniVoice/ voices/ data/
 ```
-รวมกัน ~10MB — ใส่ในไฟล์ zip เดียว (เช่น `herovoice_code.zip`)
+รวมกัน ~10MB — ใส่ในไฟล์ zip เดียว (เช่น `herovoice_code.zip`) — เช่น
+`zip -r herovoice_code.zip core/ scripts/build_voices.py scripts/manage_keys.py requirements.txt OmniVoice/ voices/ data/`
+(รันจากรากรีโป — จะได้ zip ที่ unzip แล้วโครงสร้างเหมือนบนเครื่อง dev เป๊ะ)
 
 ### ขั้น 2 — สร้าง Pod บน RunPod
 1. runpod.io → **Deploy** → **Pods**
@@ -57,7 +62,7 @@ huggingface-cli download k2-fsa/OmniVoice --local-dir ./model
 export TTS_API_KEY="<ตั้ง key ของคุณเอง>"
 export TTS_MODEL_DIR=/workspace/herovoice/model
 export TTS_VOICES_DIR=/workspace/herovoice/voices
-python server.py
+python core/server.py
 ```
 กลับไปที่หน้า Pod บน RunPod → **Connect** → เปิด **HTTP Service [Port 8000]**
 → ได้ URL เช่น `https://<pod-id>-8000.proxy.runpod.net`
@@ -151,20 +156,9 @@ curl https://<pod-id>-8000.proxy.runpod.net/health
 4. รัน:
    ```bash
    export TTS_API_KEY=<key>
-   python server.py
+   python core/server.py
    ```
 5. Expose port 8000 ในตั้งค่า Pod เหมือนวิธี A
-
----
-
-## เปิด IndexTTS-2 (อารมณ์ + cloning เหมือนสูง) — optional
-
-บน RunPod GPU ใหญ่ (VRAM 12GB+ เพื่อรันคู่ OmniVoice) เพิ่ม env:
-```
-TTS_ENABLE_INDEXTTS = 1
-INDEXTTS_MODEL_DIR  = /workspace/indextts2
-```
-+ ติดตั้ง `pip install indextts` และดาวน์โหลด checkpoint (ดู DEPLOY.md)
 
 ---
 

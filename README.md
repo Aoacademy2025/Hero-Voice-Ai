@@ -31,10 +31,10 @@ pip install -r requirements.txt
 pip install ./OmniVoice
 
 # 2) สร้างคลังเสียงสต็อก (ครั้งเดียว)
-python build_voices.py --device cuda      # หรือ --device cpu
+python scripts/build_voices.py --device cuda      # หรือ --device cpu
 
 # 3) รัน server
-bash start_all.sh                          # หรือ: python server.py
+bash start_all.sh                          # หรือ: python core/server.py
 ```
 
 เปิดใช้งาน:
@@ -45,16 +45,18 @@ bash start_all.sh                          # หรือ: python server.py
 
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `server.py` | FastAPI server + engine registry |
-| `build_voices.py` | สร้างคลังเสียงสต็อก → `voices/` |
-| `voice_library.py` | คลังเสียงโคลนถาวรต่อผู้ใช้ (SQLite + ไฟล์ wav) |
-| `credits.py` | ระบบ API key + เครดิต + rate-limit (SQLite) |
-| `manage_keys.py` | CLI จัดการ key/เครดิต |
-| `text_utils.py` | ตัดข้อความเป็นก้อนสำหรับ streaming + ทับศัพท์คำอังกฤษ + แปลงตัวเลขเป็นคำอ่านไทย |
-| `gemini_translit.py` | fallback ทับศัพท์ผ่าน Gemini API สำหรับคำที่ไม่มีในดิก (ปิดเป็นดีฟอลต์) |
-| `asr_engine.py` | ASR ด้วย faster-whisper |
-| `watermark.py` | ฝัง audio watermark (AudioSeal) |
-| `client_example.py` / `web_example.html` | ตัวอย่างเรียกใช้ |
+| `core/server.py` | FastAPI server + engine registry |
+| `core/runpod_handler.py` | เอนทรีพอยต์สำหรับ RunPod Serverless (ใช้ logic เดียวกับ server.py) |
+| `core/voice_library.py` | คลังเสียงโคลนถาวรต่อผู้ใช้ (SQLite + ไฟล์ wav) |
+| `core/credits.py` | ระบบ API key + เครดิต + rate-limit (SQLite) |
+| `core/text_utils.py` | ตัดข้อความเป็นก้อนสำหรับ streaming + ทับศัพท์คำอังกฤษ + แปลงตัวเลขเป็นคำอ่านไทย |
+| `core/gemini_translit.py` | fallback ทับศัพท์ผ่าน Gemini API สำหรับคำที่ไม่มีในดิก (ปิดเป็นดีฟอลต์) |
+| `core/asr_engine.py` | ASR ด้วย faster-whisper |
+| `core/watermark.py` | ฝัง audio watermark (AudioSeal) |
+| `core/studio.html` | หน้า Web UI ทดลองใช้ทุกฟีเจอร์ (เสิร์ฟจาก server เอง) |
+| `scripts/build_voices.py` | สร้างคลังเสียงสต็อก → `voices/` |
+| `scripts/manage_keys.py` | CLI จัดการ key/เครดิต |
+| `scripts/client_example.py` / `web_example.html` | ตัวอย่างเรียกใช้ |
 | `Dockerfile` / `Dockerfile.cpu` | image สำหรับ deploy (GPU / CPU) |
 | `tests/test_text_utils.py` | pytest สำหรับ text_utils.py — รัน `pytest tests/ -v` (ไม่ต้องมี GPU/โมเดล) |
 

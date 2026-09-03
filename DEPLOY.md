@@ -6,16 +6,16 @@ API ให้บริการเสียงสต็อก + ออกแบ�
 ## ไฟล์ในระบบ
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `server.py` | FastAPI server (engine registry, โหลดโมเดลครั้งเดียว, pre-encode เสียง) |
-| `build_voices.py` | สร้างคลังเสียงสต็อก (รันครั้งเดียว → `voices/`) |
-| `voice_library.py` | คลังเสียงโคลนถาวรต่อผู้ใช้ (SQLite + wav) |
-| `credits.py` | ระบบ API key + เครดิต + rate-limit (SQLite) |
-| `manage_keys.py` | CLI จัดการ key/เครดิต |
-| `text_utils.py` | ตัดข้อความเป็นก้อนสำหรับ streaming + ทับศัพท์คำอังกฤษ + แปลงตัวเลขเป็นคำอ่านไทย |
-| `gemini_translit.py` | fallback ถามคำทับศัพท์จาก Gemini API สำหรับคำที่ไม่มีในดิก (ปิดเป็นดีฟอลต์) |
-| `asr_engine.py` | ASR ด้วย faster-whisper (เร็วกว่า transformers Whisper เดิม) |
-| `watermark.py` | ฝัง audio watermark (AudioSeal) ลงเสียงที่ generate ทุกตัว |
-| `client_example.py` | ตัวอย่างเรียก API |
+| `core/server.py` | FastAPI server (engine registry, โหลดโมเดลครั้งเดียว, pre-encode เสียง) |
+| `core/voice_library.py` | คลังเสียงโคลนถาวรต่อผู้ใช้ (SQLite + wav) |
+| `core/credits.py` | ระบบ API key + เครดิต + rate-limit (SQLite) |
+| `core/text_utils.py` | ตัดข้อความเป็นก้อนสำหรับ streaming + ทับศัพท์คำอังกฤษ + แปลงตัวเลขเป็นคำอ่านไทย |
+| `core/gemini_translit.py` | fallback ถามคำทับศัพท์จาก Gemini API สำหรับคำที่ไม่มีในดิก (ปิดเป็นดีฟอลต์) |
+| `core/asr_engine.py` | ASR ด้วย faster-whisper (เร็วกว่า transformers Whisper เดิม) |
+| `core/watermark.py` | ฝัง audio watermark (AudioSeal) ลงเสียงที่ generate ทุกตัว |
+| `scripts/build_voices.py` | สร้างคลังเสียงสต็อก (รันครั้งเดียว → `voices/`) |
+| `scripts/manage_keys.py` | CLI จัดการ key/เครดิต |
+| `scripts/client_example.py` | ตัวอย่างเรียก API |
 | `Dockerfile` / `Dockerfile.cpu` | image สำหรับ deploy (GPU / CPU) |
 | `requirements.txt` | dependencies |
 | `tests/test_text_utils.py` | pytest สำหรับ text_utils.py (ไม่ต้องมี GPU/โมเดล — รัน `pytest tests/ -v`) |
@@ -94,8 +94,8 @@ docker run --gpus all -p 8000:8000 herovoice-tts
 ```bash
 pip install -r requirements.txt
 pip install ./OmniVoice
-python build_voices.py --device cuda   # ถ้ายังไม่มี voices/
-uvicorn server:app --host 0.0.0.0 --port 8000
+python scripts/build_voices.py --device cuda   # ถ้ายังไม่มี voices/
+cd core && uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
 ---
@@ -114,11 +114,11 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 | `TTS_CUSTOM_VOICES_DIR` | `./custom_voices` | โฟลเดอร์เก็บเสียงโคลนถาวร (ควร mount volume) |
 | `TTS_VOICES_DB` | `<custom_voices>/voices.db` | SQLite เมทาดาทาเสียงโคลน |
 | `TTS_PROMPT_CACHE_SIZE` | `64` | จำนวน clone-prompt ที่ cache ในแรม |
-| `TTS_ASR_MODEL` | `large-v3-turbo` | โมเดล ASR — ชื่อโมเดลของ faster-whisper (ดู `asr_engine.py`), โหลด lazy |
+| `TTS_ASR_MODEL` | `large-v3-turbo` | โมเดล ASR — ชื่อโมเดลของ faster-whisper (ดู `core/asr_engine.py`), โหลด lazy |
 | `TTS_ASR_DEVICE` | auto (`cuda`/`cpu`) | บังคับ device ที่ ASR รัน แยกจาก TTS ได้ |
 | `TTS_ASR_COMPUTE_TYPE` | `float16` (cuda) / `int8` (cpu) | ความละเอียด compute ของ faster-whisper |
-| `TTS_ENABLE_WATERMARK` | `1` (เปิด) | ฝัง audio watermark (AudioSeal) ลงเสียงที่ generate ทุกตัว — ตั้ง `0` เพื่อปิด (ดู `watermark.py`) |
-| `TTS_GEMINI_TRANSLITERATE` | `0` (ปิด) | เปิด fallback ถามคำทับศัพท์จาก Gemini API สำหรับคำอังกฤษที่ไม่มีในดิก (ดู `gemini_translit.py`) — ต้องตั้ง `GEMINI_API_KEY` ด้วย |
+| `TTS_ENABLE_WATERMARK` | `1` (เปิด) | ฝัง audio watermark (AudioSeal) ลงเสียงที่ generate ทุกตัว — ตั้ง `0` เพื่อปิด (ดู `core/watermark.py`) |
+| `TTS_GEMINI_TRANSLITERATE` | `0` (ปิด) | เปิด fallback ถามคำทับศัพท์จาก Gemini API สำหรับคำอังกฤษที่ไม่มีในดิก (ดู `core/gemini_translit.py`) — ต้องตั้ง `GEMINI_API_KEY` ด้วย |
 | `GEMINI_API_KEY` | — | จำเป็นถ้าเปิด `TTS_GEMINI_TRANSLITERATE=1` — สร้างฟรีที่ https://aistudio.google.com/apikey |
 | `GEMINI_MODEL` | `gemini-2.5-flash-lite` | โมเดล Gemini ที่ใช้ทับศัพท์ |
 
@@ -145,38 +145,9 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 
 ---
 
-## เอนจินที่ 2: IndexTTS-2 (cloning เหมือนสูง) — optional, **ปิดไว้ก่อน**
-
-> ⚠️ **ปิดใช้งานไว้ก่อนโดยตั้งใจ (2026-09-02)** — ทดสอบแล้ว IndexTTS-2 **อ่านภาษาไทยไม่ได้จริง**
-> BPE tokenizer ของมันมองข้อความไทยทั้งประโยคเป็น unknown token ตัวเดียว (ไม่ใช่แค่ออกเสียงเพี้ยน
-> แต่ไม่รู้จักข้อความเลย) ผลคือได้เสียงพึมพำแทนคำพูดจริง (ยืนยันด้วย ASR แล้ว) — โปรเจกต์นี้เน้น
-> ภาษาไทยเป็นหลัก จึง**ไม่ควรเปิดใช้ engine นี้** จนกว่าจะเจอโมเดลอารมณ์ที่รองรับไทยจริง
-> ใช้ได้เฉพาะกับข้อความภาษาอังกฤษ/จีนเท่านั้น (ภาษาที่มันเทรนมาจริง)
-
-OmniVoice เก่งหลายภาษา/ออกแบบเสียง แต่ cloning ไม่เป๊ะ. IndexTTS-2 โคลนเหมือนกว่ามาก
-— เปิดใช้เฉพาะบน **GPU** (และเฉพาะข้อความอังกฤษ/จีนเท่านั้น ตามคำเตือนด้านบน):
-
-```bash
-# 1) ติดตั้ง (ดู repo index-tts/index-tts)
-pip install indextts        # หรือ pip install -r requirements-indextts.txt
-# 2) ดาวน์โหลด checkpoint
-huggingface-cli download IndexTeam/IndexTTS-2 --local-dir /models/indextts2
-# 3) เปิดใช้งาน
-export TTS_ENABLE_INDEXTTS=1
-export INDEXTTS_MODEL_DIR=/models/indextts2
-export INDEXTTS_CFG=/models/indextts2/config.yaml
-python server.py
-```
-- โหลดไม่สำเร็จ (ไม่ติดตั้ง/ไม่มี GPU) → server ข้ามไป ใช้ OmniVoice ต่อได้ปกติ
-- เรียกใช้: `POST /tts {"engine":"indextts2","voice_id":"cv_...","text":"..."}`
-- ใช้เสียง ref ร่วมกับ OmniVoice ได้ (เสียงสต็อก + เสียงโคลนถาวรจากคลังเดียวกัน)
-- ⚠️ dependency (torch ฯลฯ) อาจชนกับ OmniVoice — ถ้าชน แนะนำรัน IndexTTS แยก container/venv
-  แล้วให้ทั้งสองใช้ `custom_voices/` volume เดียวกัน
-- ⚠️ IndexTTS-2 license = ต้องขอ Bilibili หากเกิน 100M MAU / รายได้ 1B RMB (ดูก่อนใช้เชิงพาณิชย์)
-
 ## หมายเหตุ
 - โมเดลไม่ thread-safe → server generate ทีละงาน (มี lock). รับ concurrent ได้ด้วยการเข้าคิว
-- อยากได้เสียงเพิ่ม/เปลี่ยนโทน: แก้ `VOICE_PRESETS` ใน `build_voices.py` (ใช้เฉพาะคำ instruct ที่โมเดลรองรับ — gender/age/pitch/whisper/accent) แล้วรันใหม่
+- อยากได้เสียงเพิ่ม/เปลี่ยนโทน: แก้ `VOICE_PRESETS` ใน `scripts/build_voices.py` (ใช้เฉพาะคำ instruct ที่โมเดลรองรับ — gender/age/pitch/whisper/accent) แล้วรันใหม่
 - **API key auth ทำแล้ว** — เปิดผ่าน env `TTS_API_KEY` (single) หรือ `TTS_CREDITS_DB` (credits) ดูตาราง env ด้านบน
 - โหมดเครดิตเก็บใน SQLite (ดีพอสำหรับ single-pod) — ถ้าสเกลหลาย pod ควรย้ายเครดิตไป Postgres และ rate-limit ไป Redis
 - ⚠️ **ต้อง mount volume** สำหรับข้อมูลที่ต้องอยู่ถาวร ไม่งั้นหายเมื่อ pod รีสตาร์ต:

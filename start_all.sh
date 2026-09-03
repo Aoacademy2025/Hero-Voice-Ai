@@ -25,7 +25,7 @@ fi
 (
   source "$REPO_DIR/venv/Scripts/activate"
   cd "$REPO_DIR"
-  python server.py
+  python core/server.py
 ) > "$LOG_DIR/server.log" 2>&1 &
 PID=$!
 echo "Hero Voice TTS -> http://localhost:8000  (PID $PID, log: logs/server.log)"

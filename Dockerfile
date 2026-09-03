@@ -25,13 +25,19 @@ RUN pip install --no-cache-dir --no-deps /app/OmniVoice \
     && pip install --no-cache-dir \
         accelerate pydub tensorboardX webdataset numpy soundfile librosa
 
-# 3) โค้ด server + คลังเสียง (ถ้า bake เข้า image)
-COPY server.py build_voices.py credits.py text_utils.py manage_keys.py voice_library.py engine_indextts.py voice_similarity.py studio.html ./
+# 3) โค้ด server + สคริปต์ — ก็อปทั้งโฟลเดอร์ทับซ้อนโครงสร้างเดียวกับ host เป๊ะ (core/, scripts/,
+#    data/) แทนที่จะแบนเข้า /app ตรงๆ — server.py ใช้ __file__-relative path หาไฟล์ที่อยู่ติดกัน
+#    (studio.html) และไฟล์ข้อมูลที่รากรีโป (data/en_th_transliteration.tsv, model/, voices/) อยู่แล้ว
+#    ก็อปให้โครงสร้างตรงกับ host พอดีจะได้ไม่ต้องมี logic แยกสองแบบ
+COPY core/ /app/core/
+COPY scripts/ /app/scripts/
+COPY data/ /app/data/
 # โมเดล + เสียง: จะ COPY เข้า image หรือ mount เป็น volume ก็ได้ (ดู DEPLOY.md)
 COPY model/ /app/model/
 COPY voices/ /app/voices/
 
-# path ให้ server หาโมเดล/เสียงเจอใน container
+# path ให้ server หาโมเดล/เสียงเจอใน container (ตรงกับดีฟอลต์อยู่แล้วเพราะโครงสร้างเหมือน host
+# แต่ตั้งชัดเจนไว้กันพลาดถ้าย้ายโฟลเดอร์ในอนาคต)
 ENV TTS_MODEL_DIR=/app/model \
     TTS_VOICES_DIR=/app/voices \
     TTS_MAX_CONCURRENCY=2 \
@@ -42,4 +48,4 @@ EXPOSE 8000
 
 # 1 worker เพราะโมเดลกิน VRAM + generate ทีละงานอยู่แล้ว
 # สเกลด้วยการเพิ่ม container/GPU แทนการเพิ่ม worker ใน process เดียว
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "core/server.py"]

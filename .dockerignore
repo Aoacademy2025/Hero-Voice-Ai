@@ -7,8 +7,8 @@ __pycache__/
 !voices/*.wav
 .git/
 .vscode/
-tts.py
-client_example.py
+scripts/tts.py
+scripts/client_example.py
 api_out_*.wav
 custom_voices/
 credits.db

@@ -5,13 +5,16 @@ test_ab_params.py — สร้างไฟล์เสียงชุด A/B �
 ใช้ voice_id เดียวกับที่ server.py ใช้จริง (ผ่าน build_prompt เหมือน /tts)
 รันแล้วไฟล์จะอยู่ใน ab_output/<voice_id>__step<N>__gs<G>.wav — เปิดฟังเทียบเอง
 
-วิธีรัน: python test_ab_params.py [voice_id] [text ไทยเอง]
+วิธีรัน: python tests/test_ab_params.py [voice_id] [text ไทยเอง]
 """
 import os
 import sys
 import time
+from pathlib import Path
 
 import soundfile as sf
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
 
 from server import OmniVoiceEngine, SAMPLE_RATE
 from text_utils import normalize_thai_numbers, transliterate_english

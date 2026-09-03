@@ -2,10 +2,10 @@
 test_tts.py — สคริปต์ทดสอบเสียง: ไทย / อังกฤษ / ตัวเลข / ปนกัน
 
 รัน server ไว้ก่อน (bash start_all.sh) แล้ว:
-  python test_tts.py                          # ใช้ voice_02, num_step 32
-  python test_tts.py --voice voice_05         # เปลี่ยนเสียง
-  python test_tts.py --voice cv_xxx           # ใช้เสียงโคลนของเรา
-  python test_tts.py --num_step 40 --guidance 3 --speed 0.7
+  python tests/test_tts.py                          # ใช้ voice_02, num_step 32
+  python tests/test_tts.py --voice voice_05         # เปลี่ยนเสียง
+  python tests/test_tts.py --voice cv_xxx           # ใช้เสียงโคลนของเรา
+  python tests/test_tts.py --num_step 40 --guidance 3 --speed 0.7
 
 ผลไฟล์อยู่ใน test_outputs/  (เปิดฟังเทียบได้)
 env: TTS_API_BASE (ดีฟอลต์ http://localhost:8000), TTS_API_KEY (ถ้าเปิด auth)
@@ -20,7 +20,9 @@ import requests
 API = os.environ.get("TTS_API_BASE", "http://localhost:8000")
 KEY = os.environ.get("TTS_API_KEY", "")
 HEADERS = {"X-API-Key": KEY} if KEY else {}
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_outputs")
+# test_outputs/ อยู่ที่รากรีโป (ไปอีกชั้นจาก tests/) ไม่ได้ย้ายมาด้วยตอนจัดระเบียบโฟลเดอร์
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT_DIR = os.path.join(_REPO_ROOT, "test_outputs")
 
 # เคสทดสอบ: (ชื่อไฟล์, ข้อความ, override params)
 CASES = [

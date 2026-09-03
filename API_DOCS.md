@@ -31,7 +31,7 @@ API แปลงข้อความเป็นเสียงพูด (Thai/
 | **ASR (ถอดเสียง)** | ถอดไฟล์เสียงเป็นข้อความ | `/transcribe`, และอัตโนมัติตอน `/voices` ถ้าไม่ระบุ `ref_text` |
 | **ลดเสียงรบกวน (denoise)** | แยกเสียงพูดออกจากเสียงพื้นหลัง/ดนตรี + normalize ความดัง (Demucs) | `/enhance` แบบเดี่ยวๆ, หรือ `enhance_ref=true` (ดีฟอลต์) ใน `/clone`, `/voices` |
 | **แปลงคำอังกฤษ/ตัวเลขเป็นคำอ่านไทย** | กันเสียงสะดุด/เพี้ยนตอนอ่านคำทับศัพท์อังกฤษหรือตัวเลข/จำนวนเงินกลางประโยคไทย | field `transliterate_english`, `normalize_numbers` ใน `/tts` (ดีฟอลต์เปิดทั้งคู่) |
-| **ลายน้ำเสียง (watermark)** | ฝังลายน้ำที่ตรวจสอบย้อนกลับได้ในไฟล์เสียงที่สร้างทุกไฟล์ | อัตโนมัติทุก endpoint ที่สร้างเสียง (ดู `watermark.py`) |
+| **ลายน้ำเสียง (watermark)** | ฝังลายน้ำที่ตรวจสอบย้อนกลับได้ในไฟล์เสียงที่สร้างทุกไฟล์ | อัตโนมัติทุก endpoint ที่สร้างเสียง (ดู `core/watermark.py`) |
 | **OpenAI-compatible** | เสียบแทน OpenAI TTS ได้ทันที เปลี่ยนแค่ base URL + key | `/v1/audio/speech` |
 
 **แท็ก non-verbal ที่รองรับ:** `[laughter]`, `[sigh]`, `[confirmation-en]`, `[question-en]`, `[question-ah]`,
@@ -50,13 +50,13 @@ API แปลงข้อความเป็นเสียงพูด (Thai/
 | **Single key** | ตั้ง `TTS_API_KEY` | 1 key ใช้ได้ไม่จำกัด (เหมาะ dev/ภายใน) |
 | **Credits** | ตั้ง `TTS_CREDITS_DB` | หลาย key แยกยอดเครดิต + rate-limit + คิดเงินตามวินาทีเสียง |
 
-โหมด Credits: จัดการ key ด้วย `manage_keys.py`
+โหมด Credits: จัดการ key ด้วย `scripts/manage_keys.py`
 ```bash
 export TTS_CREDITS_DB=/data/credits.db
-python manage_keys.py create --name "ลูกค้า A" --credits 1000 --rate 60
-python manage_keys.py create --name admin --unlimited
-python manage_keys.py add --key sk_xxx --credits 500
-python manage_keys.py list
+python scripts/manage_keys.py create --name "ลูกค้า A" --credits 1000 --rate 60
+python scripts/manage_keys.py create --name admin --unlimited
+python scripts/manage_keys.py add --key sk_xxx --credits 500
+python scripts/manage_keys.py list
 ```
 เครดิตถูกหักตาม **วินาทีเสียงที่สร้าง × `TTS_COST_PER_SECOND`** (ดีฟอลต์ 1.0)
 เครดิตหมด → `402`, ยิงถี่เกิน rate → `429`
@@ -211,7 +211,7 @@ data: {"done":true,"total_duration":9.4,"credits_charged":9.4}
 ### คลังเสียงสต็อกภาษาลาว (`voices_lao/`)
 
 แยกเก็บต่างหากจากเสียงสต็อกไทยใน `voices/` โดยตั้งใจ (ไม่ปนรหัส `voice_XX`, ไม่ปนกันในไฟล์
-manifest เดียวกัน) — สร้างด้วย `build_voices_lao.py` (คู่กับ `build_voices.py` ของฝั่งไทย) และ**เสียบเข้า
+manifest เดียวกัน) — สร้างด้วย `scripts/build_voices_lao.py` (คู่กับ `scripts/build_voices.py` ของฝั่งไทย) และ**เสียบเข้า
 `server.py` เป็นเสียงสต็อกใช้งานได้จริงแล้ว** ผ่าน `OmniVoiceEngine._load_extra_manifest()` (โหลดต่อจาก
 เสียงชุดหลัก, ปรับโฟลเดอร์ได้ด้วย env `TTS_LAO_VOICES_DIR`)
 
@@ -236,10 +236,10 @@ manifest เดียวกัน) — สร้างด้วย `build_voices
 (กันเคสออกเสียงผิดตอนข้อความมีแต่ตัวเลข/สัญลักษณ์ที่เดาภาษาจาก unicode ไม่ได้) ส่วนข้อความที่เป็นตัวอักษร
 ลาวจริง (unicode 0x0E80–0x0EFF) ระบบ `mixed_language` ที่เปิดอยู่โดยดีฟอลต์ตรวจจับให้เองอยู่แล้วเช่นกัน
 
-ตอนนี้เปิดใช้งาน 7 เสียง — เพิ่มเสียงลาวใหม่ได้โดยเติม preset ใน `VOICE_PRESETS` ของ `build_voices_lao.py`
+ตอนนี้เปิดใช้งาน 7 เสียง — เพิ่มเสียงลาวใหม่ได้โดยเติม preset ใน `VOICE_PRESETS` ของ `scripts/build_voices_lao.py`
 แล้วรันซ้ำ (เสียงเดิมที่มีไฟล์อยู่แล้วจะข้ามอัตโนมัติ ไม่สร้างทับ):
 ```bash
-venv/Scripts/python.exe build_voices_lao.py --device cuda
+venv/Scripts/python.exe scripts/build_voices_lao.py --device cuda
 ```
 
 ---
@@ -256,7 +256,7 @@ venv/Scripts/python.exe build_voices_lao.py --device cuda
 
 > ใช้ faster-whisper (CTranslate2 backend, เร็วกว่า transformers Whisper เดิมมาก) — ครั้งแรกจะโหลด
 > โมเดล (~1.5GB, ดาวน์โหลดครั้งเดียว) request แรกช้ากว่าปกติ — ปรับโมเดล/device ได้ด้วย env
-> `TTS_ASR_MODEL` / `TTS_ASR_DEVICE` / `TTS_ASR_COMPUTE_TYPE` (ดู `asr_engine.py`)
+> `TTS_ASR_MODEL` / `TTS_ASR_DEVICE` / `TTS_ASR_COMPUTE_TYPE` (ดู `core/asr_engine.py`)
 
 ---
 
@@ -276,7 +276,7 @@ venv/Scripts/python.exe build_voices_lao.py --device cuda
 { "audio_base64": "UklGR...", "format": "wav", "sample_rate": 44100, "duration": 3.2 }
 ```
 > ล้มเหลว/ไม่ได้ติดตั้ง Demucs → ยัง `200` ปกติแต่คืนไฟล์เดิม (normalize ความดังอย่างเดียว) ไม่ throw
-> ปรับโมเดลได้ด้วย env `TTS_ENHANCE_MODEL` (ดีฟอลต์ `htdemucs`, ดู `audio_enhance.py`)
+> ปรับโมเดลได้ด้วย env `TTS_ENHANCE_MODEL` (ดีฟอลต์ `htdemucs`, ดู `core/audio_enhance.py`)
 
 ---
 

@@ -9,7 +9,7 @@ test_text_utils.py — เทสของ text_utils.py (pure function, ไม�
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
 
 from text_utils import (
     chunk_text,

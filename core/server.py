@@ -17,9 +17,9 @@ server.py — Hero Voice TTS API (v2)
           pitch(very low/low/moderate/high/very high pitch), style(whisper),
           accent(american/british/australian accent, ...) — แต่ละหมวด <=1 คำ คั่นด้วย ", "
 
-รัน:
-  python build_voices.py     # ครั้งเดียว สร้างคลังเสียง
-  python server.py           # http://0.0.0.0:8000  (Swagger: /docs)
+รัน (จากรากรีโป):
+  python scripts/build_voices.py     # ครั้งเดียว สร้างคลังเสียง
+  python core/server.py              # http://0.0.0.0:8000  (Swagger: /docs)
 """
 import asyncio
 import base64
@@ -50,7 +50,11 @@ from text_utils import chunk_text, normalize_thai_numbers, split_by_language, tr
 from voice_library import VoiceLibrary
 
 # ── config ──────────────────────────────────────────────────────────
-_BASE = os.path.dirname(os.path.abspath(__file__))
+# _HERE = โฟลเดอร์นี้ (core/) — ใช้หาไฟล์ที่อยู่ติดกับ server.py เอง (เช่น studio.html)
+# _BASE = รากรีโป (พาเรนต์ของ core/) — ใช้เป็นดีฟอลต์ของโฟลเดอร์ข้อมูล (model/voices/ฯลฯ
+# ที่อยู่ที่รากรีโป ไม่ได้ย้ายเข้ามาใน core/ ด้วย)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_BASE = os.path.dirname(_HERE)
 MODEL_DIR = os.environ.get("TTS_MODEL_DIR", os.path.join(_BASE, "model"))
 VOICES_DIR = os.environ.get("TTS_VOICES_DIR", os.path.join(_BASE, "voices"))
 # เสียงสต็อกภาษาลาว — manifest/โฟลเดอร์แยกจาก voices/ (ดู build_voices_lao.py) โหลดเพิ่มเข้ามา
@@ -97,13 +101,6 @@ BASE_SPEED = float(os.environ.get("TTS_BASE_SPEED", "0.65"))
 # ยังไม่ได้วัดผลจริง (GPU เครื่องนี้ใช้งานไม่ได้ตอนแก้) — ทดสอบฟังเทียบก่อน-หลังแล้วปรับต่อได้
 # (ตั้ง env TTS_CLASS_TEMPERATURE หรือส่ง class_temperature เองต่อ request ก็ได้ ดู TTSRequest)
 DEFAULT_CLASS_TEMPERATURE = float(os.environ.get("TTS_CLASS_TEMPERATURE", "0.4"))
-
-# เอนจินที่ 2: IndexTTS-2 (cloning เหมือนสูง + อารมณ์) — เปิดด้วย TTS_ENABLE_INDEXTTS=1 (ต้อง GPU + ติดตั้ง)
-# ⚠️ ปิดไว้ก่อนโดยตั้งใจ (2026-09-02) — IndexTTS-2 อ่านภาษาไทยไม่ได้จริง (BPE tokenizer
-# มองข้อความไทยทั้งประโยคเป็น unknown token ตัวเดียว → ได้แค่เสียงพึมพำ ไม่ใช่คำพูดจริง —
-# ดู generate_emotion_training_data.py หัวไฟล์) โปรเจกต์นี้เน้นภาษาไทยเป็นหลัก จึงไม่ควร
-# เปิดใช้ engine นี้จนกว่าจะเจอโมเดลอารมณ์ที่รองรับไทยจริง หรือมีทางแก้ปัญหา tokenizer นี้
-ENABLE_INDEXTTS = os.environ.get("TTS_ENABLE_INDEXTTS", "") == "1"
 
 # auth: ถ้าตั้ง TTS_CREDITS_DB → ใช้ระบบเครดิต (หลาย key แยกยอด); ไม่งั้นใช้ TTS_API_KEY เดี่ยว
 CREDITS_DB = os.environ.get("TTS_CREDITS_DB")
@@ -165,7 +162,7 @@ class OmniVoiceEngine:
 
         manifest_path = os.path.join(VOICES_DIR, "voices.json")
         if not os.path.exists(manifest_path):
-            raise RuntimeError(f"{manifest_path} not found — run `python build_voices.py` first")
+            raise RuntimeError(f"{manifest_path} not found — run `python scripts/build_voices.py` first")
         with open(manifest_path, encoding="utf-8") as f:
             manifest = {v["id"]: v for v in json.load(f)}
 
@@ -382,18 +379,6 @@ async def resolve_clone_prompt(eng, voice_id: str, keyrec):
     return prompt
 
 
-def resolve_ref(voice_id: str, keyrec):
-    """คืน (ref_wav_path, ref_text) จาก voice_id — ใช้กับเอนจินที่รับไฟล์ ref ตรงๆ (เช่น IndexTTS)
-    รองรับทั้งเสียงสต็อก (จาก manifest ของ omnivoice) และเสียงโคลนถาวร"""
-    stock = ENGINES["omnivoice"].voices.get(voice_id)
-    if stock is not None:
-        return stock["ref_audio"], stock["meta"].get("ref_text", "")
-    rec = library.get(voice_id)
-    if rec is None or not library.can_use(rec, owner_id(keyrec)):
-        raise HTTPException(404, f"ไม่พบเสียง '{voice_id}'")
-    return library.audio_path(voice_id), rec.get("ref_text", "")
-
-
 # ── lifespan ────────────────────────────────────────────────────────
 STATE = {"sem": None, "lock": None}
 
@@ -403,15 +388,6 @@ async def lifespan(app: FastAPI):
     eng = OmniVoiceEngine()
     eng.load()
     ENGINES[eng.id] = eng
-    # เอนจินเสริม IndexTTS-2 (optional) — โหลดไม่ได้ก็ข้าม ไม่ให้ server ล้ม
-    if ENABLE_INDEXTTS:
-        try:
-            from engine_indextts import IndexTTS2Engine
-            ix = IndexTTS2Engine()
-            ix.load()
-            ENGINES[ix.id] = ix
-        except Exception as e:
-            print(f"[indextts2] ปิดใช้งาน (โหลดไม่สำเร็จ): {e}")
     STATE["sem"] = asyncio.Semaphore(MAX_CONCURRENCY)
     STATE["lock"] = asyncio.Lock()
     yield
@@ -456,9 +432,6 @@ class TTSRequest(BaseModel):
     normalize_numbers: bool = Field(True,
         description="แปลงตัวเลข (จำนวน/เงินบาท/เบอร์โทร) เป็นคำอ่านภาษาไทยก่อนอ่าน "
                     "กันปัญหาสคริปต์กับเสียงที่ได้ไม่ตรงกันตอนมีตัวเลข (ดู text_utils.normalize_thai_numbers)")
-    emotion: Optional[str] = Field(None,
-        description="อารมณ์ (เฉพาะเอนจินที่รองรับ — engine=\"indextts2\") เช่น 'happy','sad','angry','excited' "
-                    "OmniVoice ไม่รองรับพารามิเตอร์นี้ (ค่าจะถูกเพิกเฉย)")
 
 
 class TTSResponse(BaseModel):
@@ -474,7 +447,7 @@ class TTSResponse(BaseModel):
 
 
 # ── endpoints ───────────────────────────────────────────────────────
-STUDIO_PATH = os.path.join(_BASE, "studio.html")
+STUDIO_PATH = os.path.join(_HERE, "studio.html")
 
 
 @app.get("/", include_in_schema=False)
@@ -551,21 +524,6 @@ async def me(keyrec=Depends(auth)):
 @app.post("/tts", response_model=TTSResponse)
 async def tts(req: TTSRequest, keyrec=Depends(auth)):
     eng = get_engine(req.engine)
-
-    # เอนจินอื่นที่รับ ref ตรงๆ (เช่น IndexTTS) — ใช้ .synth()
-    if eng.id != "omnivoice":
-        if not req.voice_id:
-            raise HTTPException(422, f"เอนจิน '{eng.id}' ต้องระบุ voice_id (เสียง ref)")
-        ref_wav, ref_text = resolve_ref(req.voice_id, keyrec)
-        t = time.time()
-        wav, _ = await _generate_serialized(eng.synth, req.text, ref_wav,
-                                            ref_text, emotion=req.emotion, speed=req.speed)
-        gen_time = time.time() - t
-        duration = len(wav) / SAMPLE_RATE
-        cost = charge(keyrec, duration, "tts")
-        return TTSResponse(engine=eng.id, voice_id=req.voice_id, text=req.text,
-                           audio_base64=b64(wav_bytes(wav)), duration=round(duration, 2),
-                           generation_time=round(gen_time, 2), credits_charged=cost)
 
     if not req.voice_id and not req.instruct:
         raise HTTPException(422, "ต้องระบุ voice_id (สต็อก/โคลน) หรือ instruct (ออกแบบเสียง)")
