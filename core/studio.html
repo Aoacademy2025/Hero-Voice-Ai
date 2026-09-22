@@ -122,16 +122,20 @@
 
   <!-- Voice design -->
   <div class="panel" id="tab-design">
-    <p class="hint">ออกแบบเสียงจากคำบรรยาย (ไม่ใช้เสียงสต็อก) — OmniVoice รองรับ เพศ/อายุ/pitch/whisper/สำเนียง (ไม่มีอารมณ์)</p>
+    <p class="hint">ออกแบบเสียงจากคำบรรยาย (ไม่ใช้เสียงสต็อก) — OmniVoice รองรับ เพศ/อายุ/pitch/สำเนียง (ไม่มีอารมณ์/สไตล์การพูด)</p>
+    <div class="field">
+      <label>เลือกไว (ผสมเพศ+อายุ+pitch ให้เลย — เหมือนตอนสร้างเสียงสต็อก)</label>
+      <div id="dPresets" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
     <div class="row3">
       <div><label>เพศ</label><select id="dGender"><option value="">-</option><option>male</option><option>female</option></select></div>
       <div><label>อายุ</label><select id="dAge"><option value="">-</option><option>child</option><option>teenager</option><option>young adult</option><option>middle-aged</option><option>elderly</option></select></div>
       <div><label>โทนเสียง (pitch)</label><select id="dPitch"><option value="">-</option><option>very low pitch</option><option>low pitch</option><option>moderate pitch</option><option>high pitch</option><option>very high pitch</option></select></div>
     </div>
     <div class="row">
-      <div><label>สำเนียง</label><select id="dAccent"><option value="">-</option><option>american accent</option><option>british accent</option><option>australian accent</option><option>indian accent</option></select></div>
-      <div style="display:flex;align-items:flex-end"><label class="switch"><input type="checkbox" id="dWhisper"> กระซิบ (whisper)</label></div>
+      <div><label>สำเนียง (เฉพาะข้อความอังกฤษ)</label><select id="dAccent"><option value="">-</option><option>american accent</option><option>british accent</option><option>australian accent</option><option>canadian accent</option><option>indian accent</option><option>chinese accent</option><option>korean accent</option><option>japanese accent</option><option>portuguese accent</option><option>russian accent</option></select></div>
     </div>
+    <div class="field"><label>เพิ่มเอง (ผสมกับตัวเลือกด้านบนได้ — พิมพ์เป็น attribute ที่โมเดลรู้จัก คั่นด้วย comma)</label><input id="dCustom" placeholder="เช่น 四川话 (ใช้ได้เฉพาะข้อความจีน)"></div>
     <div class="field"><label>instruct ที่จะส่ง</label><input id="dInstruct" readonly></div>
     <div class="field"><label>ข้อความ</label><textarea id="dText">Hello, this is a designed voice.</textarea></div>
     <button class="primary" id="dGo" onclick="doDesign()">สร้างเสียง</button>
@@ -205,13 +209,41 @@ bind("ttsSpeed","ttsSpeedV"); bind("ttsStep","ttsStepV"); bind("ttsGuide","ttsGu
 function buildInstruct() {
   const parts = [];
   ["dGender","dAge","dPitch","dAccent"].forEach(id => { const v=document.getElementById(id).value; if(v) parts.push(v); });
-  if (document.getElementById("dWhisper").checked) parts.push("whisper");
+  const custom = document.getElementById("dCustom").value.trim();
+  if (custom) custom.split(",").forEach(p => { const t=p.trim(); if(t) parts.push(t); });
   const s = parts.join(", ");
   document.getElementById("dInstruct").value = s;
   return s;
 }
-["dGender","dAge","dPitch","dAccent","dWhisper"].forEach(id =>
-  document.getElementById(id).addEventListener("change", buildInstruct));
+["dGender","dAge","dPitch","dAccent","dCustom"].forEach(id =>
+  document.getElementById(id).addEventListener("input", buildInstruct));
+
+// ── voice design quick presets (เพศ+อายุ+pitch ผสมพร้อมกัน — สูตรเดียวกับ scripts/build_voices.py) ──
+const DESIGN_PRESETS = [
+  { label: "ชาย โทนสูง สดใส", gender: "male", pitch: "high pitch" },
+  { label: "หญิง โทนต่ำ นุ่มนวล", gender: "female", pitch: "low pitch" },
+  { label: "วัยรุ่นชาย ตื่นเต้น", gender: "male", age: "teenager", pitch: "high pitch" },
+  { label: "วัยรุ่นหญิง เท่ๆ", gender: "female", age: "teenager", pitch: "low pitch" },
+  { label: "วัยทำงานชาย หนักแน่น", gender: "male", age: "young adult", pitch: "low pitch" },
+  { label: "วัยทำงานหญิง กระฉับกระเฉง", gender: "female", age: "young adult", pitch: "high pitch" },
+  { label: "กลางคนชาย น่าเชื่อถือ", gender: "male", age: "middle-aged", pitch: "very low pitch" },
+  { label: "กลางคนหญิง สง่างาม", gender: "female", age: "middle-aged", pitch: "high pitch" },
+  { label: "สูงวัยชาย ใจดี", gender: "male", age: "elderly", pitch: "very low pitch" },
+  { label: "สูงวัยหญิง อบอุ่น", gender: "female", age: "elderly", pitch: "high pitch" },
+  { label: "เด็กซุกซน", age: "child", pitch: "very high pitch" },
+];
+const dPresetsEl = document.getElementById("dPresets");
+DESIGN_PRESETS.forEach(p => {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "ghost"; b.textContent = p.label;
+  b.onclick = () => {
+    document.getElementById("dGender").value = p.gender || "";
+    document.getElementById("dAge").value = p.age || "";
+    document.getElementById("dPitch").value = p.pitch || "";
+    buildInstruct();
+  };
+  dPresetsEl.appendChild(b);
+});
 
 // ── health + voices ──
 async function init() {

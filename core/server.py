@@ -112,9 +112,9 @@ _ALLOWED_INSTRUCT = {
     "male", "female",
     "child", "teenager", "young adult", "middle-aged", "elderly",
     "very low pitch", "low pitch", "moderate pitch", "high pitch", "very high pitch",
-    "whisper",
     "american accent", "british accent", "australian accent", "indian accent",
-    "irish accent", "scottish accent", "canadian accent",
+    "canadian accent", "chinese accent", "korean accent", "japanese accent",
+    "portuguese accent", "russian accent",
 }
 
 store = None  # CreditStore (ถ้าเปิดใช้)
