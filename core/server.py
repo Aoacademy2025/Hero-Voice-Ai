@@ -255,6 +255,18 @@ class OmniVoiceEngine:
         with torch.no_grad():
             return self.model.create_voice_clone_prompt(ref_audio=ref_path, ref_text=ref_text)
 
+    def build_prompt_from_wav(self, wav: np.ndarray, ref_text: str):
+        """
+        เหมือน build_prompt แต่รับ wav ที่ generate ไว้แล้วในแรม (ไม่ต้องเขียนไฟล์ก่อน)
+        ใช้ล็อกเสียงโหมดออกแบบเสียง (instruct) ให้คงที่ข้ามหลายก้อนของสคริปต์ยาว —
+        ก้อนแรก generate จาก instruct ตรงๆ (สุ่มทิมเบอร์) แล้วเอาผลลัพธ์มาทำเป็น reference
+        ให้ก้อนถัดไปแทนที่จะยิง instruct ซ้ำ (ซึ่งจะสุ่มเสียงใหม่ทุกก้อน → เสียงเปลี่ยนกลางสคริปต์)
+        """
+        with torch.no_grad():
+            return self.model.create_voice_clone_prompt(
+                ref_audio=(torch.from_numpy(wav), self.sample_rate), ref_text=ref_text
+            )
+
     def cache_get(self, voice_id):
         with self._pcache_lock:
             if voice_id in self._pcache:
@@ -406,6 +418,34 @@ async def _generate_serialized(fn, *args, **kwargs):
             return await asyncio.to_thread(fn, *args, **kwargs)
 
 
+async def _generate_chunks(eng, chunks, *, clone_prompt, instruct, language, speed,
+                            num_step, guidance_scale, class_temperature, languages=None):
+    """
+    generate ทีละก้อน แล้ว yield (wav, duration_sec)
+
+    ทำไมต้องมีฟังก์ชันนี้แยกจาก eng._run ตรงๆ: สคริปต์ยาวถ้ายิง generate ทีเดียวรวด
+    เสียงจะเริ่มลาก/เพี้ยนสะสมไปเรื่อยๆ (ปัญหาที่รู้กันของโมเดล autoregressive) ต้องตัดเป็น
+    ก้อนสั้นๆ ก่อน (chunk_text/split_by_language) แล้วต่อเสียงกันแทน
+
+    กรณีพิเศษ — โหมดออกแบบเสียง (มี instruct แต่ไม่มี clone_prompt ตั้งต้น เช่น ไม่ได้เลือก
+    voice_id): ถ้ายิง instruct ซ้ำทุกก้อน โมเดลจะสุ่มทิมเบอร์ใหม่ทุกก้อน (ไม่มี ref audio ล็อกไว้)
+    ทำให้เสียงเปลี่ยนตัวตนกลางสคริปต์ยาว — เลยล็อกด้วยการเอาก้อนแรกที่ generate ได้มาทำเป็น
+    clone-prompt ให้ก้อนถัดๆ ไปใช้แทน (ยังส่ง instruct เดิมคู่กันด้วย เพราะ ref_audio+instruct ที่
+    สอดคล้องกันช่วยให้เสียงเสถียรขึ้นกว่าใช้ ref_audio อย่างเดียว — ดู OmniVoice/docs/tips.md)
+    """
+    active_prompt = clone_prompt
+    for i, chunk in enumerate(chunks):
+        chunk_lang = languages[i] if languages is not None else language
+        wav, dur = await _generate_serialized(
+            eng._run, chunk, clone_prompt=active_prompt, instruct=instruct,
+            language=chunk_lang, speed=speed, num_step=num_step,
+            guidance_scale=guidance_scale, class_temperature=class_temperature,
+        )
+        if active_prompt is None and instruct:
+            active_prompt = await _generate_serialized(eng.build_prompt_from_wav, wav, chunk)
+        yield wav, dur
+
+
 # ── models ──────────────────────────────────────────────────────────
 class TTSRequest(BaseModel):
     text: str = Field(..., min_length=1)
@@ -537,13 +577,14 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
     if req.mixed_language:
         # แยกช่วงไทย/อังกฤษ → generate แต่ละช่วงด้วยภาษาที่ถูก (เสียงเดียวกัน) → ต่อเสียง
         # (หลัง transliterate แล้วคำอังกฤษที่รู้จักจะกลายเป็นไทย เหลือแค่คำที่ไม่มีในดิกที่ยังตัดช่วง)
+        segs = split_by_language(text)
         wavs = []
-        for seg, lang in split_by_language(text):
-            w, _ = await _generate_serialized(
-                eng._run, seg, clone_prompt=clone_prompt, instruct=instruct,
-                language=lang, speed=req.speed, num_step=req.num_step,
-                guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
-            )
+        async for w, _ in _generate_chunks(
+            eng, [s for s, _ in segs], clone_prompt=clone_prompt, instruct=instruct,
+            language=None, languages=[l for _, l in segs],
+            speed=req.speed, num_step=req.num_step,
+            guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
+        ):
             wavs.append(w)
         wav = np.concatenate(wavs) if len(wavs) > 1 else wavs[0]
         duration = len(wav) / SAMPLE_RATE
@@ -553,11 +594,18 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
         # ข้อความมีแต่ตัวเลข/สัญลักษณ์ที่บอกภาษาจาก unicode ไม่ได้
         lang = req.language or (eng.voices.get(req.voice_id, {}).get("meta", {}).get("language")
                                 if req.voice_id else None)
-        wav, duration = await _generate_serialized(
-            eng._run, text, clone_prompt=clone_prompt, instruct=instruct,
-            language=lang, speed=req.speed, num_step=req.num_step,
+        # ตัดเป็นก้อนก่อน generate เสมอ (ไม่ใช่ทีเดียวรวด) — กันเสียงลาก/เพี้ยนสะสมตอนสคริปต์ยาว
+        # ดูเหตุผลเต็มใน _generate_chunks รวมถึงการล็อกเสียงโหมดออกแบบเสียงข้ามก้อน
+        chunks = chunk_text(text)
+        wavs, duration = [], 0.0
+        async for w, dur in _generate_chunks(
+            eng, chunks, clone_prompt=clone_prompt, instruct=instruct, language=lang,
+            speed=req.speed, num_step=req.num_step,
             guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
-        )
+        ):
+            wavs.append(w)
+            duration += dur
+        wav = np.concatenate(wavs) if len(wavs) > 1 else wavs[0]
     gen_time = time.time() - t
     cost = charge(keyrec, duration, "tts")
     return TTSResponse(
@@ -589,16 +637,17 @@ async def tts_stream(req: TTSRequest, keyrec=Depends(auth)):
 
     async def gen():
         total_dur = 0.0
-        for i, chunk in enumerate(chunks):
-            wav, dur = await _generate_serialized(
-                eng._run, chunk, clone_prompt=clone_prompt, instruct=instruct,
-                language=lang, speed=req.speed, num_step=req.num_step,
-                guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
-            )
+        i = 0
+        async for wav, dur in _generate_chunks(
+            eng, chunks, clone_prompt=clone_prompt, instruct=instruct,
+            language=lang, speed=req.speed, num_step=req.num_step,
+            guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
+        ):
             total_dur += dur
-            evt = {"index": i, "total": len(chunks), "text": chunk,
+            evt = {"index": i, "total": len(chunks), "text": chunks[i],
                    "audio_base64": b64(wav_bytes(wav)), "duration": round(dur, 2)}
             yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
+            i += 1
         cost = charge(keyrec, total_dur, "tts/stream")
         done = {"done": True, "total_duration": round(total_dur, 2),
                 "credits_charged": cost}
