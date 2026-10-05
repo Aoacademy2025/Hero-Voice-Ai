@@ -232,6 +232,28 @@ def _number_to_words(num_str: str) -> str:
     return num_to_thaiword(int(num_str))
 
 
+def expand_maiyamok(text: str) -> str:
+    """
+    ขยายไม้ยมก "ๆ" เป็นคำซ้ำ ("มากๆ" -> "มากมาก") — โมเดลอ่านตัว ๆ เดี่ยวๆ ไม่ได้
+    (เช่น "ให้มากๆ" ถูกอ่านเป็น "ให้รัน") ใช้ pythainlp ตัดคำเพื่อหาคำที่ต้องซ้ำ
+    """
+    if "ๆ" not in text:
+        return text
+    from pythainlp.tokenize import word_tokenize
+    out = []
+    for tok in word_tokenize(text, keep_whitespace=True):
+        base = tok.lstrip("ๆ")
+        if tok.endswith("ๆ") and tok.strip("ๆ"):  # คำที่ติด ๆ มาในโทเคนเดียว เช่น "ค่อยๆ"
+            word = tok.rstrip("ๆ")
+            out.append(word + word)
+        elif tok.startswith("ๆ"):  # ๆ แยกเป็นโทเคนเอง → ซ้ำคำก่อนหน้า
+            prev = next((t for t in reversed(out) if t.strip()), "")
+            out.append(prev + base)
+        else:
+            out.append(tok)
+    return "".join(out)
+
+
 def normalize_thai_numbers(text: str) -> str:
     """
     แปลงตัวเลขในข้อความเป็นคำอ่านภาษาไทย ก่อนส่งเข้าโมเดล — กันปัญหาสคริปต์กับ
@@ -298,12 +320,17 @@ def split_by_language(text: str):
     return out or [(text, "Thai")]
 
 
-def chunk_text(text: str, min_chars: int = 60, max_chars: int = 220):
+def chunk_text(text: str, min_chars: int = 60, max_chars: int = 120):
     """
     คืนรายการก้อนข้อความสำหรับป้อน generate ทีละก้อน
 
     - รวมประโยคสั้นๆ ต่อกันจนถึง min_chars (ลดจำนวน generate call)
     - ไม่ให้ก้อนไหนเกิน max_chars (กัน generate ก้อนใหญ่จนช้า/หน่วง)
+
+    max_chars เดิม 220 → ลดเป็น 120: วัดจริง (voice_01 สคริปต์ไทย ~3,000 ตัวอักษร ถอดเสียงกลับ
+    ด้วย whisper เทียบต้นฉบับ) ก้อน 200+ ตัวอักษรมีโอกาสที่โมเดล "ยุบ" ทั้งวลีกลางก้อนหายไปแบบสุ่ม
+    (ตรงต้นฉบับต่ำสุด 0.38, มี 3/21 ก้อนต่ำกว่า 0.9) ส่วนก้อน ≤120 ตรงเฉลี่ย 0.975 ต่ำสุด 0.77
+    มี 1/35 ก้อนต่ำกว่า 0.9 — ก้อนสั้นกว่า = อ่านครบกว่า ชดเชยรอยต่อที่มากขึ้นด้วย _concat_smooth
     """
     sentences = split_sentences(text)
     chunks, buf = [], ""

@@ -46,7 +46,7 @@ from omnivoice import OmniVoice
 import asr_engine
 import audio_enhance
 import watermark
-from text_utils import chunk_text, normalize_thai_numbers, split_by_language, transliterate_english
+from text_utils import chunk_text, expand_maiyamok, normalize_thai_numbers, split_by_language, transliterate_english
 from voice_library import VoiceLibrary
 
 # ── config ──────────────────────────────────────────────────────────
@@ -98,9 +98,12 @@ BASE_SPEED = float(os.environ.get("TTS_BASE_SPEED", "0.65"))
 # ไว้แล้ว (เพราะมี best-of-N คอยกรองตัวที่แย่ทิ้ง) แต่ /tts ไม่มี best-of-N (generate ครั้งเดียวจบ
 # ต่อ request เพราะเรียกบ่อยกว่ามาก) จึงตั้งค่ากลางๆ ต่ำกว่า /clone ไว้ก่อน (ความเสี่ยงออกเสียงเพี้ยน
 # สูงขึ้นตามค่านี้ แต่ไม่มีตัวกรองมาเลือกซ้ำเหมือน best-of-N)
-# ยังไม่ได้วัดผลจริง (GPU เครื่องนี้ใช้งานไม่ได้ตอนแก้) — ทดสอบฟังเทียบก่อน-หลังแล้วปรับต่อได้
+# วัดจริงแล้ว (voice_01, สคริปต์ไทย 21 ก้อน, ถอดเสียงกลับด้วย whisper เทียบต้นฉบับ):
+# T=0.0 ตรงต้นฉบับเฉลี่ย 97% ต่ำสุด 91% | T=0.1 ต่ำสุด 55% | T=0.2 ต่ำสุด 62% | T=0.4 ต่ำสุด 38%
+# ค่าที่ไม่ใช่ 0 มีก้อนที่พูดผิดหนักโผล่แบบสุ่ม (ผู้ใช้ฟังแล้วว่า "สะดุด พูดผิดๆถูกๆ") จึงใช้ 0.0
+# แลกกับเสียงที่อาจแบนกว่า ถ้าอยากเพิ่มความมีชีวิตชีวาต้องมีตัวกรอง (ถอดเสียงตรวจแล้ว retry) ก่อน
 # (ตั้ง env TTS_CLASS_TEMPERATURE หรือส่ง class_temperature เองต่อ request ก็ได้ ดู TTSRequest)
-DEFAULT_CLASS_TEMPERATURE = float(os.environ.get("TTS_CLASS_TEMPERATURE", "0.4"))
+DEFAULT_CLASS_TEMPERATURE = float(os.environ.get("TTS_CLASS_TEMPERATURE", "0.0"))
 
 # auth: ถ้าตั้ง TTS_CREDITS_DB → ใช้ระบบเครดิต (หลาย key แยกยอด); ไม่งั้นใช้ TTS_API_KEY เดี่ยว
 CREDITS_DB = os.environ.get("TTS_CREDITS_DB")
@@ -234,6 +237,7 @@ class OmniVoiceEngine:
         with torch.no_grad():
             audio = self.model.generate(**kwargs)
         wav = np.asarray(audio[0], dtype=np.float32)
+        wav = _tighten_pauses(wav, self.sample_rate)
         wav = watermark.apply(wav, self.sample_rate)
         return wav, len(wav) / self.sample_rate
 
@@ -241,11 +245,21 @@ class OmniVoiceEngine:
     def _gcfg(num_step, guidance_scale=None, class_temperature=None):
         from omnivoice.models.omnivoice import OmniVoiceGenerationConfig
         cfg = OmniVoiceGenerationConfig(num_step=num_step)
+        # เคยลองปิด/ปรับ postprocess_output (remove_silence ในตัวโมเดล mid_sil=500ms) เพื่อลด
+        # จังหวะพักที่เท่ากันทื่อๆ แต่ปิดทั้งหมดทำให้มีช่วงเงียบหลุดยาวหลายวินาที ส่วนลด mid_sil เอง
+        # ไปตัดโดนพยางค์ในคำจริง (คำขาด/เพี้ยน) เลยคงค่าดีฟอลต์ของโมเดลไว้ — ปลอดภัยกว่า แม้จังหวะ
+        # พักจะยังไม่เป็นธรรมชาติเท่าที่ควร (ดู PR ประวัติ ถ้าจะลองใหม่ต้องหาวิธีที่ไม่แตะการตัด
+        # เสียงจริง เช่น cross-fade ที่ขอบแทนตัดทิ้ง)
         if guidance_scale is not None:
             cfg.guidance_scale = guidance_scale  # สูง = ยึดเสียงต้นฉบับมากขึ้น (ดีฟอลต์ 2.0)
         if class_temperature is not None:
             # >0 = สุ่มเลือก token (ดีฟอลต์โมเดล 0 = greedy/deterministic)
             # ใช้ตอน best-of-N cloning เพื่อให้แต่ละรอบได้ผลต่างกัน แล้วเลือกตัวที่คล้าย ref สุด
+            #
+            # เคยลองบังคับ position_temperature=0 คู่กัน (ดีฟอลต์โมเดล 5.0 — คุมว่า unmask ตำแหน่ง
+            # ไหนก่อนตอน decode) เพื่อให้ผลลัพธ์ deterministic เป๊ะเวลา class_temperature=0 แต่กลับทำให้
+            # เสียงเพี้ยนหนักกว่าเดิมมาก (โมเดลถูกเทรนคาดหวัง position_temperature≈5.0 เป็นค่าปกติ
+            # การบังคับ 0 พาออกนอกช่วงที่เทรนมา) อย่าแตะ position_temperature อีก
             cfg.class_temperature = class_temperature
         return cfg
 
@@ -418,8 +432,111 @@ async def _generate_serialized(fn, *args, **kwargs):
             return await asyncio.to_thread(fn, *args, **kwargs)
 
 
+def _tighten_pauses(wav, sr: int, min_gap_ms: float = 450.0, keep_ms: float = 170.0,
+                    xfade_ms: float = 25.0):
+    """
+    หดช่วงเงียบกลางประโยคที่ยาวเกินธรรมชาติ (~1 วิ ตอนพูดช้า) ให้เหลือ ~keep_ms*2
+    ตัดเฉพาะกลางช่วงที่ RMS ต่ำต่อเนื่อง >= min_gap_ms เท่านั้น ไม่แตะส่วนที่มีเสียงพูด
+    (ต่างจาก mid_sil ในตัวโมเดลที่เคยตัดโดนพยางค์) ขอบเงียบหัว/ท้ายไฟล์คงไว้
+    """
+    h = int(sr * 0.01)
+    nfr = len(wav) // h
+    if nfr < 10:
+        return wav
+    rms = np.sqrt(np.mean(wav[:nfr * h].reshape(nfr, h) ** 2, axis=1))
+    silent = rms < max(np.percentile(rms, 95) * 0.06, 1e-4)
+    min_fr, keep_fr = int(min_gap_ms / 10), int(keep_ms / 10)
+    xf = int(sr * xfade_ms / 1000)
+    pieces, cursor, i = [], 0, 0
+    while i < nfr:
+        if not silent[i]:
+            i += 1
+            continue
+        j = i
+        while j < nfr and silent[j]:
+            j += 1
+        if i > 0 and j < nfr and (j - i) >= min_fr:  # เฉพาะกลางไฟล์
+            pieces.append(wav[cursor:(i + keep_fr) * h])
+            cursor = (j - keep_fr) * h
+        i = j
+    pieces.append(wav[cursor:])
+    out = pieces[0]
+    fo, fi = np.linspace(1, 0, xf, dtype=np.float32), np.linspace(0, 1, xf, dtype=np.float32)
+    for w in pieces[1:]:
+        if len(out) > xf and len(w) > xf:
+            out = np.concatenate([out[:-xf], out[-xf:] * fo + w[:xf] * fi, w[xf:]])
+        else:
+            out = np.concatenate([out, w])
+    return out.astype(np.float32)
+
+
+def _concat_smooth(wavs, crossfade_ms: float = 80.0, sample_rate: int = SAMPLE_RATE):
+    """
+    ต่อเสียงหลายก้อนแบบ crossfade แทน concat ตรงๆ
+
+    แต่ละก้อนที่ OmniVoice generate มา ถูก fade-in/fade-out + silence pad ที่ขอบอยู่แล้ว
+    (ดีฟอลต์โมเดล pad_duration=fade_duration=0.1s — ดู OmniVoiceGenerationConfig) ถ้า concat
+    ตรงๆ จะได้ช่วงเงียบสนิท ~0.2s คั่นทุกรอยต่อก้อน ฟังดูเหมือนเสียงสะดุด/หายใจเป็นจังหวะ
+    ไม่ smooth ทั้งที่เป็นประโยคต่อเนื่องกัน — ทับซ้อน (overlap-add) ปลายก้อนก่อนหน้ากับต้นก้อน
+    ถัดไปแทน ให้รอยต่อกลืนเป็นเนื้อเดียวและช่วงเงียบสั้นลง
+    """
+    if len(wavs) <= 1:
+        return wavs[0] if wavs else np.zeros(0, dtype=np.float32)
+    n = int(sample_rate * crossfade_ms / 1000)
+    out = wavs[0]
+    fade_out = np.linspace(1.0, 0.0, n, dtype=np.float32) if n > 0 else None
+    fade_in = np.linspace(0.0, 1.0, n, dtype=np.float32) if n > 0 else None
+    for w in wavs[1:]:
+        if n > 0 and len(out) > n and len(w) > n:
+            overlap = out[-n:] * fade_out + w[:n] * fade_in
+            out = np.concatenate([out[:-n], overlap, w[n:]])
+        else:
+            out = np.concatenate([out, w])
+    return out
+
+
+def _asr_match(wav, text: str) -> Optional[float]:
+    """
+    วัดว่าเสียงที่ generate ได้ "อ่านตรงต้นฉบับ" แค่ไหน (0..1) โดยถอดเสียงกลับด้วย whisper แล้ว
+    เทียบกับข้อความที่สั่ง — เทียบเฉพาะตัวอักษรไทย/ลาว (ตัด ๆ ช่องว่าง วรรคตอน และแปลงตัวเลข
+    ที่ whisper เขียนเป็นเลขอารบิกกลับเป็นคำอ่านก่อน) คืน None ถ้าข้อความไม่มีตัวอักษรไทย/ลาว
+    พอจะเทียบ (เช่นก้อนอังกฤษล้วน) — ผู้เรียกให้ข้ามการตรวจ
+    """
+    import difflib
+
+    def norm(s):
+        return "".join(ch for ch in normalize_thai_numbers(s)
+                       if ("฀" <= ch <= "໿") and ch != "ๆ")
+
+    ref = norm(text)
+    if len(ref) < 10:
+        return None
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        path = f.name
+    try:
+        sf.write(path, wav, SAMPLE_RATE)
+        hyp = norm(asr_engine.transcribe(path))
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    return difflib.SequenceMatcher(None, ref, hyp).ratio()
+
+
+# ตรวจทุกก้อนหลัง generate ด้วย _asr_match แล้วสร้างซ้ำถ้าอ่านไม่ตรง (ใช้ใน /tts เท่านั้น —
+# /tts/stream ไม่ใช้เพราะ latency ต่อก้อนสำคัญกว่า) เหตุผล: แม้ class_temperature=0 โมเดลก็ยัง
+# ไม่ deterministic (position_temperature ดีฟอลต์ 5.0 สุ่มลำดับ unmask) ก้อนเดิมรอบหนึ่งอ่านครบ
+# อีกรอบยุบทั้งวลีหายได้ — สร้างซ้ำแล้วเลือกรอบที่ตรงสุดจึงแก้ได้ตรงจุด แลกกับเวลาต่อก้อน
+# เพิ่ม (~1-2 วิ ต่อการถอดเสียง 1 ครั้ง + generate ซ้ำเฉพาะก้อนที่ตก)
+VERIFY_ASR = os.environ.get("TTS_VERIFY_ASR", "1") != "0"
+VERIFY_MIN_RATIO = float(os.environ.get("TTS_VERIFY_MIN_RATIO", "0.85"))
+VERIFY_MAX_TRIES = int(os.environ.get("TTS_VERIFY_MAX_TRIES", "3"))
+
+
 async def _generate_chunks(eng, chunks, *, clone_prompt, instruct, language, speed,
-                            num_step, guidance_scale, class_temperature, languages=None):
+                            num_step, guidance_scale, class_temperature, languages=None,
+                            verify: bool = False):
     """
     generate ทีละก้อน แล้ว yield (wav, duration_sec)
 
@@ -436,11 +553,26 @@ async def _generate_chunks(eng, chunks, *, clone_prompt, instruct, language, spe
     active_prompt = clone_prompt
     for i, chunk in enumerate(chunks):
         chunk_lang = languages[i] if languages is not None else language
-        wav, dur = await _generate_serialized(
-            eng._run, chunk, clone_prompt=active_prompt, instruct=instruct,
-            language=chunk_lang, speed=speed, num_step=num_step,
-            guidance_scale=guidance_scale, class_temperature=class_temperature,
-        )
+        best = None  # (ratio, wav, dur) — เก็บรอบที่อ่านตรงสุดไว้ เผื่อไม่มีรอบไหนผ่านเกณฑ์
+        for attempt in range(VERIFY_MAX_TRIES if verify else 1):
+            wav, dur = await _generate_serialized(
+                eng._run, chunk, clone_prompt=active_prompt, instruct=instruct,
+                language=chunk_lang, speed=speed, num_step=num_step,
+                guidance_scale=guidance_scale, class_temperature=class_temperature,
+            )
+            if not verify:
+                break
+            ratio = await _generate_serialized(_asr_match, wav, chunk)
+            if ratio is None:  # ก้อนไม่มีตัวอักษรไทย/ลาวพอเทียบ → ไม่ตรวจ
+                break
+            if best is None or ratio > best[0]:
+                best = (ratio, wav, dur)
+            if ratio >= VERIFY_MIN_RATIO:
+                break
+            print(f"[tts] chunk {i} อ่านไม่ตรง (ratio={ratio:.2f} < {VERIFY_MIN_RATIO}) "
+                  f"รอบ {attempt + 1}/{VERIFY_MAX_TRIES} → สร้างซ้ำ", flush=True)
+        if best is not None:
+            _, wav, dur = best
         if active_prompt is None and instruct:
             active_prompt = await _generate_serialized(eng.build_prompt_from_wav, wav, chunk)
         yield wav, dur
@@ -570,6 +702,7 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
     instruct = clean_instruct(req.instruct)
     clone_prompt = await resolve_clone_prompt(eng, req.voice_id, keyrec) if req.voice_id else None
     text = transliterate_english(req.text) if req.transliterate_english else req.text
+    text = expand_maiyamok(text)
     if req.normalize_numbers:
         text = normalize_thai_numbers(text)
 
@@ -584,9 +717,10 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
             language=None, languages=[l for _, l in segs],
             speed=req.speed, num_step=req.num_step,
             guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
+            verify=VERIFY_ASR,
         ):
             wavs.append(w)
-        wav = np.concatenate(wavs) if len(wavs) > 1 else wavs[0]
+        wav = _concat_smooth(wavs)
         duration = len(wav) / SAMPLE_RATE
     else:
         # req.language ไม่ระบุ → ใช้ "language" จาก manifest ของ voice_id เอง ถ้ามี (เช่นเสียงลาว
@@ -596,16 +730,19 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
                                 if req.voice_id else None)
         # ตัดเป็นก้อนก่อน generate เสมอ (ไม่ใช่ทีเดียวรวด) — กันเสียงลาก/เพี้ยนสะสมตอนสคริปต์ยาว
         # ดูเหตุผลเต็มใน _generate_chunks รวมถึงการล็อกเสียงโหมดออกแบบเสียงข้ามก้อน
+        # ห้ามขยายก้อนให้ใหญ่ (เคยลอง 350–600 ตัวอักษร เพื่อลดรอยต่อ) — ก้อนยาวทำให้เสียงช่วงท้าย
+        # ก้อนเพี้ยนสะสม (autoregressive drift) ซึ่งเป็นเหตุผลที่ต้องตัดก้อนตั้งแต่แรก
         chunks = chunk_text(text)
-        wavs, duration = [], 0.0
-        async for w, dur in _generate_chunks(
+        wavs = []
+        async for w, _ in _generate_chunks(
             eng, chunks, clone_prompt=clone_prompt, instruct=instruct, language=lang,
             speed=req.speed, num_step=req.num_step,
             guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
+            verify=VERIFY_ASR,
         ):
             wavs.append(w)
-            duration += dur
-        wav = np.concatenate(wavs) if len(wavs) > 1 else wavs[0]
+        wav = _concat_smooth(wavs)
+        duration = len(wav) / SAMPLE_RATE
     gen_time = time.time() - t
     cost = charge(keyrec, duration, "tts")
     return TTSResponse(
@@ -628,6 +765,7 @@ async def tts_stream(req: TTSRequest, keyrec=Depends(auth)):
     instruct = clean_instruct(req.instruct)
     clone_prompt = await resolve_clone_prompt(eng, req.voice_id, keyrec) if req.voice_id else None
     text = transliterate_english(req.text) if req.transliterate_english else req.text
+    text = expand_maiyamok(text)
     if req.normalize_numbers:
         text = normalize_thai_numbers(text)
     chunks = chunk_text(text)

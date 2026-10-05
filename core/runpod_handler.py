@@ -38,7 +38,7 @@ import numpy as np
 
 from server import OmniVoiceEngine, SAMPLE_RATE, wav_bytes, b64, clean_instruct, \
     _CLONE_BEST_OF, _BEST_OF_CLASS_TEMPERATURE
-from text_utils import normalize_thai_numbers, split_by_language, transliterate_english
+from text_utils import expand_maiyamok, normalize_thai_numbers, split_by_language, transliterate_english
 
 # โหลดโมเดลครั้งเดียวตอน import (cold start ของ worker) — ไม่ใช่ทุก job
 print("[handler] loading OmniVoice engine ...")
@@ -75,6 +75,7 @@ def _do_tts(inp: dict) -> dict:
     mixed_language = inp.get("mixed_language", True)
     if inp.get("transliterate_english", True):
         text = transliterate_english(text)
+    text = expand_maiyamok(text)
     if inp.get("normalize_numbers", True):
         text = normalize_thai_numbers(text)
 
