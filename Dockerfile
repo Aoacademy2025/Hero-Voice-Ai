@@ -12,8 +12,9 @@
 #   --build-arg TTS_MODE_DEFAULT=serverless --build-arg BAKE_MODELS=1 --build-arg MODELS_DIR=/models
 # → รัน core/runpod_handler.py แทน server และฝังโมเดลไว้ใน image (cold start ไม่ต้องดาวน์โหลด 8GB)
 #
-# torch 2.5+ จำเป็นสำหรับ voxcpm (ตัวเดิม 2.4.1 ใช้ไม่ได้)
-FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
+# torch 2.8 (cu128): ตรงกับ Pod ที่ทดสอบผ่าน — 2.5.1 import transformers รุ่นปัจจุบันไม่ผ่าน
+# (GenerationMixin) และไม่รองรับ GPU Blackwell ที่ RunPod Serverless ใช้
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
 
 # libsndfile: soundfile | ffmpeg: pydub/librosa | gcc/g++: torch.compile (inductor) ของ VoxCPM2
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -68,6 +69,12 @@ COPY data/ /app/data/
 COPY voices/ /app/voices/
 COPY voices_lao/ /app/voices_lao/
 RUN sed -i 's/\r$//' /app/scripts/*.sh && chmod +x /app/scripts/docker_entrypoint.sh
+
+# ทดสอบ import ทุกโมดูลที่ server/handler ใช้ตอน build — dependency พังให้ CI ล้มตรงนี้
+# (เคยพังบน RunPod Serverless: transformers import GenerationMixin ไม่ผ่านกับ torch 2.5.1)
+RUN cd /app/core && python -c "import transformers; from transformers import AutoFeatureExtractor, GenerationMixin; \
+import omnivoice, voxcpm, faster_whisper, runpod, server, hybrid_engine, voxcpm2_engine; \
+print('import check ok: torch', __import__('torch').__version__, 'transformers', transformers.__version__)"
 
 EXPOSE 8000
 # 1 process: โมเดลกิน VRAM และ generate ทีละงานอยู่แล้ว — สเกลด้วยการเพิ่ม Pod
