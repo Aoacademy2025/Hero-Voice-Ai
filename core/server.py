@@ -446,8 +446,9 @@ async def resolve_clone_prompt(eng, voice_id: str, keyrec):
 STATE = {"sem": None, "lock": None}
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def load_engines():
+    """โหลดเอนจินตาม TTS_ENGINES (ใช้ร่วมกันทั้ง server นี้และ runpod_handler.py ของ Serverless)
+    มี VoxCPM2 → ใส่เอนจินรวม hero (OmniVoice กำหนดเสียง + VoxCPM2 พูด) เป็นตัวแรก/ค่าเริ่มต้น"""
     eng = OmniVoiceEngine()
     eng.load()
     ENGINES[eng.id] = eng
@@ -457,14 +458,17 @@ async def lifespan(app: FastAPI):
                            tighten_pauses=(_tighten_pauses if os.environ.get("TTS_VOXCPM2_TIGHTEN") == "1" else None),
                            voices=eng.voices)
         vx.load()
-        ENGINES[vx.id] = vx
-        # เอนจินรวมเป็นตัวแรก/ค่าเริ่มต้น: ลูกค้าส่งข้อความ + เลือกเสียงของ OmniVoice → VoxCPM2 พูด
         from hybrid_engine import HybridEngine
         hero = HybridEngine(eng, vx)
         ENGINES.clear()
         ENGINES.update({hero.id: hero, eng.id: eng, vx.id: vx})
         DEFAULT_ENGINE["id"] = os.environ.get("TTS_DEFAULT_ENGINE", hero.id)
     print(f"[server] engines: {list(ENGINES)} (default: {DEFAULT_ENGINE['id']})", flush=True)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    load_engines()
     STATE["sem"] = asyncio.Semaphore(MAX_CONCURRENCY)
     STATE["lock"] = asyncio.Lock()
     yield

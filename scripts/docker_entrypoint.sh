@@ -3,7 +3,7 @@
 # (ครั้งแรก ~3-5 นาทีตามความเร็วเน็ตของเครื่อง, ครั้งต่อไปบน Network Volume เดิมข้ามได้ทันที)
 set -e
 cd /app
-[ -n "$TTS_API_KEY" ] || [ -n "$TTS_CREDITS_DB" ] || echo "[entrypoint] คำเตือน: ไม่ได้ตั้ง TTS_API_KEY/TTS_CREDITS_DB — server จะสุ่ม key ให้ (ดูใน log)"
+[ "$TTS_MODE" = "serverless" ] || [ -n "$TTS_API_KEY" ] || [ -n "$TTS_CREDITS_DB" ] || echo "[entrypoint] คำเตือน: ไม่ได้ตั้ง TTS_API_KEY/TTS_CREDITS_DB — server จะสุ่ม key ให้ (ดูใน log)"
 mkdir -p "$TTS_MODEL_DIR" "$HF_HOME" "$TTS_CUSTOM_VOICES_DIR"
 
 if [ ! -f "$TTS_MODEL_DIR/config.json" ]; then
@@ -15,5 +15,9 @@ if [[ ",$TTS_ENGINES," == *",voxcpm2,"* ]]; then
   python -c "from huggingface_hub import snapshot_download as d; d('openbmb/VoxCPM2')"
 fi
 
+if [ "$TTS_MODE" = "serverless" ]; then
+  echo "[entrypoint] RunPod Serverless worker (engines: $TTS_ENGINES)"
+  exec python -u core/runpod_handler.py
+fi
 echo "[entrypoint] starting server (engines: $TTS_ENGINES)"
 exec python core/server.py

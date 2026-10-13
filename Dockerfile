@@ -8,6 +8,10 @@
 #         docker build --build-arg WITH_VOXCPM2=0 -t herovoice-tts:omni .   # OmniVoice อย่างเดียว
 # run:    docker run --gpus all -p 8000:8000 -e TTS_API_KEY=<key> -v herovoice:/workspace herovoice-tts
 #
+# RunPod Serverless (จ่ายเฉพาะตอนมีคำขอ): image tag :serverless build ด้วย
+#   --build-arg TTS_MODE_DEFAULT=serverless --build-arg BAKE_MODELS=1 --build-arg MODELS_DIR=/models
+# → รัน core/runpod_handler.py แทน server และฝังโมเดลไว้ใน image (cold start ไม่ต้องดาวน์โหลด 8GB)
+#
 # torch 2.5+ จำเป็นสำหรับ voxcpm (ตัวเดิม 2.4.1 ใช้ไม่ได้)
 FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
 
@@ -26,7 +30,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ซึ่งจะติดตั้ง torch ทับ (ABI ไม่ตรง) และดึงของหนักที่ server ไม่ได้ใช้
 COPY OmniVoice/ /app/OmniVoice/
 RUN pip install --no-cache-dir --no-deps /app/OmniVoice \
-    && pip install --no-cache-dir accelerate pydub tensorboardX webdataset python-multipart huggingface_hub
+    && pip install --no-cache-dir accelerate pydub tensorboardX webdataset python-multipart huggingface_hub runpod
 
 ARG WITH_VOXCPM2=1
 RUN if [ "$WITH_VOXCPM2" = "1" ]; then \
@@ -34,18 +38,14 @@ RUN if [ "$WITH_VOXCPM2" = "1" ]; then \
         && pip install --no-cache-dir inflect wetext addict simplejson sortedcontainers einops ; \
     fi
 
-# โครงสร้างเหมือน host (server.py หาไฟล์แบบ __file__-relative)
-COPY core/ /app/core/
-COPY scripts/ /app/scripts/
-COPY data/ /app/data/
-COPY voices/ /app/voices/
-COPY voices_lao/ /app/voices_lao/
-RUN sed -i 's/\r$//' /app/scripts/*.sh && chmod +x /app/scripts/docker_entrypoint.sh
-
 # ข้อมูลที่ต้องอยู่ถาวร (โมเดล, HF cache, เสียงโคลน, เครดิต) อยู่ใต้ /workspace ทั้งหมด
-ENV TTS_ENGINES=omnivoice,voxcpm2 \
-    TTS_MODEL_DIR=/workspace/model \
-    HF_HOME=/workspace/hf \
+#  (serverless: โมเดลฝังใน /models ตอน build แทน — ดู BAKE_MODELS ด้านล่าง)
+ARG MODELS_DIR=/workspace
+ARG TTS_MODE_DEFAULT=server
+ENV TTS_MODE=${TTS_MODE_DEFAULT} \
+    TTS_ENGINES=omnivoice,voxcpm2 \
+    TTS_MODEL_DIR=${MODELS_DIR}/model \
+    HF_HOME=${MODELS_DIR}/hf \
     TTS_VOICES_DIR=/app/voices \
     TTS_LAO_VOICES_DIR=/app/voices_lao \
     TTS_CUSTOM_VOICES_DIR=/workspace/custom_voices \
@@ -55,6 +55,19 @@ ENV TTS_ENGINES=omnivoice,voxcpm2 \
     PYTHONIOENCODING=utf-8 \
     PYTHONUNBUFFERED=1
 # ตั้ง TTS_API_KEY หรือ TTS_CREDITS_DB ตอน run (อย่า bake key ลง image)
+
+# ฝังโมเดลทั้งหมดไว้ใน image (OmniVoice, VoxCPM2, faster-whisper ของ ASR verify) สำหรับ Serverless
+ARG BAKE_MODELS=0
+COPY scripts/bake_models.py /app/scripts/bake_models.py
+RUN if [ "$BAKE_MODELS" = "1" ]; then python /app/scripts/bake_models.py; fi
+
+# โครงสร้างเหมือน host (server.py หาไฟล์แบบ __file__-relative)
+COPY core/ /app/core/
+COPY scripts/ /app/scripts/
+COPY data/ /app/data/
+COPY voices/ /app/voices/
+COPY voices_lao/ /app/voices_lao/
+RUN sed -i 's/\r$//' /app/scripts/*.sh && chmod +x /app/scripts/docker_entrypoint.sh
 
 EXPOSE 8000
 # 1 process: โมเดลกิน VRAM และ generate ทีละงานอยู่แล้ว — สเกลด้วยการเพิ่ม Pod
