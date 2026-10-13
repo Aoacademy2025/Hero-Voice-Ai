@@ -2,6 +2,24 @@
 
 โมเดลเล็ก (~2.5GB VRAM) ใช้ GPU อะไรก็ได้
 
+## ⚡ วิธี D: คำสั่งเดียวจากเครื่องคุณ (แนะนำ — ไม่ต้องเปิดเว็บ ไม่ต้อง Docker)
+
+`scripts/runpod_deploy_server.py` สร้าง Pod → อัปโหลดโค้ด → ติดตั้ง → โหลดโมเดลจาก HF → รัน server → พิมพ์ URL ให้เสร็จ
+```powershell
+$env:RUNPOD_API_KEY = "<key จาก runpod.io → Settings → API Keys>"
+venv\Scripts\python scriptsunpod_deploy_server.py                 # deploy ใหม่ (GPU 24GB ตัวแรกที่ว่าง)
+venv\Scripts\python scriptsunpod_deploy_server.py --status        # ดู Pod ที่รันอยู่ + URL
+venv\Scripts\python scriptsunpod_deploy_server.py --update <POD>  # แก้โค้ดแล้วส่งขึ้นไปใหม่ + restart
+venv\Scripts\python scriptsunpod_deploy_server.py --stop <POD>    # หยุด (ค่า GPU หยุด, ข้อมูลยังอยู่)
+venv\Scripts\python scriptsunpod_deploy_server.py --terminate <POD>
+```
+- ครั้งแรกใช้เวลา ~6-8 นาที (pip + โหลดโมเดล 3GB) ได้ URL แบบ `https://<pod-id>-8000.proxy.runpod.net` และ X-API-Key ที่สุ่มให้ (หรือกำหนดเอง `--tts-key`)
+- **ข้อมูลถาวร**: ใส่ `--volume <NETWORK_VOLUME_ID>` (สร้างที่ Storage ก่อน, region เดียวกับ GPU) → venv/โมเดล/เสียงโคลน/เครดิต อยู่บน volume รอบหน้าขึ้นใน ~1 นาที
+- ต้องการ VoxCPM2 ด้วย: `--engines omnivoice,voxcpm2` (ต้องใช้ GPU 16GB+ และโค้ดฝั่ง engine ต้องเสียบเสร็จก่อน)
+- env อื่นๆ ส่งได้ด้วย `--env TTS_CREDITS_DB=/workspace/credits.db` (ซ้ำได้)
+
+---
+
 ## 🔰 ถ้ากลัวทำผิดแล้วเสียเงิน — เริ่มที่ "วิธี C" ด้านล่างก่อน
 
 วิธี C ไม่ต้อง build/push Docker image (ไม่มีขั้นตอนที่ทำพลาดแล้วเสียเวลา build ใหม่)
