@@ -309,8 +309,12 @@ class OmniVoiceEngine:
 ENGINES = {}
 
 
-def get_engine(engine_id: str) -> OmniVoiceEngine:
-    eng = ENGINES.get(engine_id)
+DEFAULT_ENGINE = {"id": "omnivoice"}  # ตั้งใน lifespan: "hero" เมื่อโหลด VoxCPM2 ได้
+
+
+def get_engine(engine_id: Optional[str]) -> OmniVoiceEngine:
+    """engine_id ว่าง → เอนจินเริ่มต้น (hero = OmniVoice กำหนดเสียง + VoxCPM2 พูด)"""
+    eng = ENGINES.get(engine_id or DEFAULT_ENGINE["id"])
     if eng is None:
         raise HTTPException(404, f"ไม่พบเอนจิน '{engine_id}' (มี: {list(ENGINES)})")
     return eng
@@ -454,6 +458,13 @@ async def lifespan(app: FastAPI):
                            voices=eng.voices)
         vx.load()
         ENGINES[vx.id] = vx
+        # เอนจินรวมเป็นตัวแรก/ค่าเริ่มต้น: ลูกค้าส่งข้อความ + เลือกเสียงของ OmniVoice → VoxCPM2 พูด
+        from hybrid_engine import HybridEngine
+        hero = HybridEngine(eng, vx)
+        ENGINES.clear()
+        ENGINES.update({hero.id: hero, eng.id: eng, vx.id: vx})
+        DEFAULT_ENGINE["id"] = os.environ.get("TTS_DEFAULT_ENGINE", hero.id)
+    print(f"[server] engines: {list(ENGINES)} (default: {DEFAULT_ENGINE['id']})", flush=True)
     STATE["sem"] = asyncio.Semaphore(MAX_CONCURRENCY)
     STATE["lock"] = asyncio.Lock()
     yield
@@ -625,7 +636,8 @@ async def _generate_chunks(eng, chunks, *, clone_prompt, instruct, language, spe
 class TTSRequest(BaseModel):
     text: str = Field(..., min_length=1)
     voice_id: Optional[str] = Field(None, description="รหัสเสียงสต็อก (ดู /voices)")
-    engine: str = Field("omnivoice")
+    engine: Optional[str] = Field(None, description="ว่าง = ค่าเริ่มต้น hero (เสียง OmniVoice + VoxCPM2 พูด); "
+                                  "ระบุ omnivoice หรือ voxcpm2 เพื่อใช้ตัวเดียว")
     instruct: Optional[str] = Field(None, description="ออกแบบเสียง เช่น 'female, high pitch'")
     language: Optional[str] = Field(None, description="เช่น 'Thai', 'English', 'Lao' (ปล่อยว่าง=auto)")
     # เดิม default=24 ต่ำกว่า num_step=32 ที่ใช้สร้างเสียงสต็อกใน build_voices.py (และต่ำกว่า
@@ -681,6 +693,7 @@ async def health():
         "status": "ok" if eng and eng.model is not None else "loading",
         "device": eng.device if eng else None,
         "engines": list(ENGINES),
+        "default_engine": DEFAULT_ENGINE["id"],
         "num_voices": len(eng.voices) if eng else 0,
         "credits_enabled": store is not None,
         "max_concurrency": MAX_CONCURRENCY,
@@ -744,6 +757,8 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
         raise HTTPException(422, "ต้องระบุ voice_id (สต็อก/โคลน) หรือ instruct (ออกแบบเสียง)")
     instruct = engine_instruct(eng, req.instruct)
     clone_prompt = await resolve_clone_prompt(eng, req.voice_id, keyrec) if req.voice_id else None
+    if clone_prompt is None and instruct and hasattr(eng, "design_prompt"):
+        clone_prompt = await _generate_serialized(eng.design_prompt, instruct)
     native_mixed = getattr(eng, "native_mixed_language", False)
     text = (transliterate_english(req.text)
             if req.transliterate_english and not native_mixed else req.text)
@@ -810,6 +825,8 @@ async def tts_stream(req: TTSRequest, keyrec=Depends(auth)):
         raise HTTPException(422, "ต้องระบุ voice_id หรือ instruct")
     instruct = engine_instruct(eng, req.instruct)
     clone_prompt = await resolve_clone_prompt(eng, req.voice_id, keyrec) if req.voice_id else None
+    if clone_prompt is None and instruct and hasattr(eng, "design_prompt"):
+        clone_prompt = await _generate_serialized(eng.design_prompt, instruct)
     native_mixed = getattr(eng, "native_mixed_language", False)
     text = (transliterate_english(req.text)
             if req.transliterate_english and not native_mixed else req.text)
@@ -934,7 +951,7 @@ async def clone(
     ref_audio: UploadFile = File(..., description="ไฟล์เสียงตัวอย่าง 3-10 วิ (wav/mp3)"),
     ref_text: str = Form(..., min_length=1),
     text: str = Form(..., min_length=1),
-    engine: str = Form("omnivoice"),
+    engine: Optional[str] = Form(None),
     language: Optional[str] = Form(None),
     # เดิม default=16 (ครึ่งเดียวของค่าที่ใช้สร้างเสียงสต็อกใน build_voices.py และ
     # ต่ำกว่า default ของโมเดลเอง=32) ทำให้เสียงโคลนแตก/เพี้ยนกว่าเสียงสต็อกอย่างชัดเจน
@@ -1042,7 +1059,7 @@ async def create_voice(
     ref_audio: UploadFile = File(..., description="ไฟล์เสียงตัวอย่าง 3-10 วิ (wav/mp3)"),
     name: str = Form("", description="ชื่อเสียง (แสดงให้ผู้ใช้)"),
     ref_text: Optional[str] = Form(None, description="ข้อความในไฟล์ ref — เว้นว่าง = ถอดอัตโนมัติ (ASR)"),
-    engine: str = Form("omnivoice"),
+    engine: Optional[str] = Form(None),
     # ดีฟอลต์เปิด (เดิม False) — เหตุผลเดียวกับ /clone: เจ้าของเสียงที่ส่งไฟล์มาไม่จำเป็นต้องรู้จัก
     # พารามิเตอร์นี้ แต่เราอยากการันตีคุณภาพเสียงโคลนถาวรที่ดีที่สุดให้เสมอ
     enhance_ref: bool = Form(True,
@@ -1113,7 +1130,7 @@ async def delete_voice(voice_id: str, keyrec=Depends(auth)):
 @app.post("/transcribe")
 async def transcribe_ep(
     audio: UploadFile = File(..., description="ไฟล์เสียงที่จะถอดเป็นข้อความ"),
-    engine: str = Form("omnivoice"),
+    engine: Optional[str] = Form(None),
     keyrec=Depends(auth),
 ):
     eng = get_engine(engine)
@@ -1187,7 +1204,7 @@ def _encode_audio(wav: np.ndarray, fmt: str, sr: int = SAMPLE_RATE):
 
 
 class OpenAISpeechRequest(BaseModel):
-    model: str = Field("hero-voice-1", description="ชื่อเอนจิน (omnivoice/voxcpm2) ถ้าไม่ตรง → omnivoice")
+    model: str = Field("hero-voice-1", description="ชื่อเอนจิน (hero/omnivoice/voxcpm2) ถ้าไม่ตรง → ค่าเริ่มต้น hero")
     input: str = Field(..., min_length=1, description="ข้อความ")
     voice: str = Field(..., description="voice_id (สต็อก/โคลน)")
     response_format: str = Field("mp3", description="mp3/wav/flac/opus/aac/pcm")
@@ -1197,7 +1214,7 @@ class OpenAISpeechRequest(BaseModel):
 @app.post("/v1/audio/speech")
 async def openai_speech(req: OpenAISpeechRequest, keyrec=Depends(auth)):
     """เข้ากันได้กับ OpenAI TTS API — ให้ client ที่เขียนไว้คุยกับ OpenAI เปลี่ยนแค่ base URL"""
-    eng = ENGINES.get(req.model) or get_engine("omnivoice")  # model="voxcpm2" → ใช้ VoxCPM2
+    eng = ENGINES.get(req.model) or get_engine(None)  # model=ชื่อเอนจิน, อื่นๆ → ค่าเริ่มต้น (hero)
     speed = min(max(req.speed, 0.31), 2.99)  # จำกัดตามช่วงที่โมเดลรับได้
     clone_prompt = await resolve_clone_prompt(eng, req.voice, keyrec)
     wav, duration = await _generate_serialized(

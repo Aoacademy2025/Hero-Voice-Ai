@@ -2,7 +2,17 @@
 
 API แปลงข้อความเป็นเสียงพูด (Thai/multilingual) — เสียงสต็อก, ออกแบบเสียง (voice design),
 โคลนเสียง, และ streaming พร้อมระบบเครดิต/rate-limit
-(engine ภายใน: OmniVoice — เสียบเอนจินอื่นเพิ่มได้)
+(engine ภายใน: OmniVoice + VoxCPM2)
+
+> **เอนจินเริ่มต้น `hero`** (เมื่อ server เปิด `TTS_ENGINES=omnivoice,voxcpm2`): ไม่ต้องส่ง `engine`
+> ส่งแค่ `text` + เสียงจากรายการของ OmniVoice (`voice_id` หรือ `instruct`) → **OmniVoice กำหนดเสียง,
+> VoxCPM2 เป็นตัวพูด** ได้เสียง 48kHz อ่านตัวเลข/เบอร์โทร/คำอังกฤษเองได้
+> - `voice_id` สต็อก/ลาว/โคลน → VoxCPM2 โคลนจากเสียงอ้างอิงนั้น
+> - `instruct` → OmniVoice สร้างเสียงตามคำสั่งก่อน แล้ว VoxCPM2 โคลน (instruct เดิม = เสียงเดิม)
+> - VoxCPM2 ล้มเหลวก้อนไหน server ใช้ OmniVoice สร้างก้อนนั้นแทนอัตโนมัติ
+> - สคริปต์ยาว: **ขึ้นบรรทัดใหม่ = จุดตัดท่อน** (เว้น 0.45 วินาทีระหว่างท่อน)
+> - ใช้ตัวเดียวได้ด้วย `"engine": "omnivoice"` (เร็วสุด เหมาะ streaming เรียลไทม์) หรือ `"voxcpm2"`
+> - บน RunPod: คำขอที่ใช้เวลาเกิน ~100 วินาที (สคริปต์ ~2 นาทีขึ้นไป) ถูก proxy ตัด → ใช้ `/tts/stream`
 
 - **Content-Type:** `application/json` (ยกเว้น `/clone` = `multipart/form-data`)
 - **CORS:** เปิด (`*` โดยดีฟอลต์ — production ควรจำกัดเป็นโดเมนจริง)
