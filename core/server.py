@@ -61,6 +61,8 @@ VOICES_DIR = os.environ.get("TTS_VOICES_DIR", os.path.join(_BASE, "voices"))
 # เป็น voice_id เดิม (lao_01..lao_04) ถ้าโฟลเดอร์/manifest ไม่มีก็ข้ามไปเงียบๆ (ไม่ error)
 LAO_VOICES_DIR = os.environ.get("TTS_LAO_VOICES_DIR", os.path.join(_BASE, "voices_lao"))
 SAMPLE_RATE = 24000
+# เอนจินที่เปิด (คั่นด้วย ,) — omnivoice เปิดเสมอ; voxcpm2 ต้องมี GPU ~6GB เพิ่ม (ดู voxcpm2_engine.py)
+ENABLED_ENGINES = {e.strip().lower() for e in os.environ.get("TTS_ENGINES", "omnivoice").split(",") if e.strip()}
 
 # เอาเสียงสำเนียงชาติอื่นออกก่อน (british/american/australian/canadian/indian/chinese/korean
 # accent — voice_16, 27-31, 38-43, 48) เหลือแต่เสียงไทย/อังกฤษล้วนที่ยังไม่มีสำเนียงต่างชาติ
@@ -315,9 +317,9 @@ def get_engine(engine_id: str) -> OmniVoiceEngine:
 
 
 # ── helpers ─────────────────────────────────────────────────────────
-def wav_bytes(wav: np.ndarray) -> bytes:
+def wav_bytes(wav: np.ndarray, sr: int = SAMPLE_RATE) -> bytes:
     buf = io.BytesIO()
-    sf.write(buf, wav, SAMPLE_RATE, format="WAV")
+    sf.write(buf, wav, sr, format="WAV")
     return buf.getvalue()
 
 
@@ -338,6 +340,37 @@ def clean_instruct(instruct: Optional[str]) -> Optional[str]:
             f"คำที่ใช้ได้: {sorted(_ALLOWED_INSTRUCT)}",
         )
     return ", ".join(parts)
+
+
+def engine_instruct(eng, instruct: Optional[str]) -> Optional[str]:
+    """OmniVoice รับเฉพาะคำศัพท์ที่กำหนด (clean_instruct) — VoxCPM2 รับคำบรรยายอิสระภาษาอังกฤษ"""
+    if getattr(eng, "free_form_instruct", False):
+        instruct = (instruct or "").strip()
+        if instruct and any(ord(ch) > 127 and ch.isalpha() for ch in instruct):
+            raise HTTPException(422, "instruct ของ voxcpm2 ต้องเป็นภาษาอังกฤษ เช่น "
+                                     "'a young woman, soft warm voice' (คำบรรยายภาษาไทยทำให้เสียงเพี้ยน)")
+        return instruct or None
+    return clean_instruct(instruct)
+
+
+def engine_chunks(eng, text):
+    """OmniVoice: chunk_text (≤120 ตัวอักษร) | VoxCPM2: บรรทัดละท่อน — บรรทัดที่ยาวเกิน
+    chunk_max_chars ค่อยตัดย่อยด้วย chunk_text (ข้อความไม่มีขึ้นบรรทัด = ตัดตามความยาวอย่างเดียว)"""
+    mx = getattr(eng, "chunk_max_chars", 120)
+    if not getattr(eng, "split_lines", False):
+        return chunk_text(text, max_chars=mx)
+    out = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line:
+            out.extend([line] if len(line) <= mx else chunk_text(line, max_chars=mx))
+    return out or chunk_text(text, max_chars=mx)
+
+
+def engine_concat(eng, wavs):
+    """แต่ละเอนจินต่อก้อนต่างกัน: OmniVoice crossfade (ขอบมี pad 0.1s), VoxCPM2 เว้นช่องว่างคงที่"""
+    concat = getattr(eng, "concat", None)
+    return concat(wavs) if concat else _concat_smooth(wavs)
 
 
 # ── auth dependency ─────────────────────────────────────────────────
@@ -414,6 +447,13 @@ async def lifespan(app: FastAPI):
     eng = OmniVoiceEngine()
     eng.load()
     ENGINES[eng.id] = eng
+    if "voxcpm2" in ENABLED_ENGINES:
+        from voxcpm2_engine import VoxCPM2Engine
+        vx = VoxCPM2Engine(int(os.environ.get("TTS_VOXCPM2_SR", "48000")),
+                           tighten_pauses=(_tighten_pauses if os.environ.get("TTS_VOXCPM2_TIGHTEN") == "1" else None),
+                           voices=eng.voices)
+        vx.load()
+        ENGINES[vx.id] = vx
     STATE["sem"] = asyncio.Semaphore(MAX_CONCURRENCY)
     STATE["lock"] = asyncio.Lock()
     yield
@@ -495,7 +535,7 @@ def _concat_smooth(wavs, crossfade_ms: float = 80.0, sample_rate: int = SAMPLE_R
     return out
 
 
-def _asr_match(wav, text: str) -> Optional[float]:
+def _asr_match(wav, text: str, sr: int = SAMPLE_RATE) -> Optional[float]:
     """
     วัดว่าเสียงที่ generate ได้ "อ่านตรงต้นฉบับ" แค่ไหน (0..1) โดยถอดเสียงกลับด้วย whisper แล้ว
     เทียบกับข้อความที่สั่ง — เทียบเฉพาะตัวอักษรไทย/ลาว (ตัด ๆ ช่องว่าง วรรคตอน และแปลงตัวเลข
@@ -511,10 +551,13 @@ def _asr_match(wav, text: str) -> Optional[float]:
     ref = norm(text)
     if len(ref) < 10:
         return None
+    # whisper ไม่มีภาษาลาว ถอดออกมาเป็นอักษรไทยเสมอ → เทียบกับต้นฉบับอักษรลาวได้ 0 ทุกครั้ง
+    if sum("຀" <= ch <= "໿" for ch in ref) > len(ref) // 2:
+        return None
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         path = f.name
     try:
-        sf.write(path, wav, SAMPLE_RATE)
+        sf.write(path, wav, sr)
         hyp = norm(asr_engine.transcribe(path))
     finally:
         try:
@@ -562,7 +605,7 @@ async def _generate_chunks(eng, chunks, *, clone_prompt, instruct, language, spe
             )
             if not verify:
                 break
-            ratio = await _generate_serialized(_asr_match, wav, chunk)
+            ratio = await _generate_serialized(_asr_match, wav, chunk, eng.sample_rate)
             if ratio is None:  # ก้อนไม่มีตัวอักษรไทย/ลาวพอเทียบ → ไม่ตรวจ
                 break
             if best is None or ratio > best[0]:
@@ -699,15 +742,18 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
 
     if not req.voice_id and not req.instruct:
         raise HTTPException(422, "ต้องระบุ voice_id (สต็อก/โคลน) หรือ instruct (ออกแบบเสียง)")
-    instruct = clean_instruct(req.instruct)
+    instruct = engine_instruct(eng, req.instruct)
     clone_prompt = await resolve_clone_prompt(eng, req.voice_id, keyrec) if req.voice_id else None
-    text = transliterate_english(req.text) if req.transliterate_english else req.text
-    text = expand_maiyamok(text)
-    if req.normalize_numbers:
-        text = normalize_thai_numbers(text)
+    native_mixed = getattr(eng, "native_mixed_language", False)
+    text = (transliterate_english(req.text)
+            if req.transliterate_english and not native_mixed else req.text)
+    if not native_mixed:  # VoxCPM2 อ่านตัวเลข/ไม้ยมกเองได้ถูก — แปลงก่อนทำให้ต่างจากผลที่ทดสอบไว้
+        text = expand_maiyamok(text)
+        if req.normalize_numbers:
+            text = normalize_thai_numbers(text)
 
     t = time.time()
-    if req.mixed_language:
+    if req.mixed_language and not getattr(eng, "native_mixed_language", False):
         # แยกช่วงไทย/อังกฤษ → generate แต่ละช่วงด้วยภาษาที่ถูก (เสียงเดียวกัน) → ต่อเสียง
         # (หลัง transliterate แล้วคำอังกฤษที่รู้จักจะกลายเป็นไทย เหลือแค่คำที่ไม่มีในดิกที่ยังตัดช่วง)
         segs = split_by_language(text)
@@ -720,8 +766,8 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
             verify=VERIFY_ASR,
         ):
             wavs.append(w)
-        wav = _concat_smooth(wavs)
-        duration = len(wav) / SAMPLE_RATE
+        wav = engine_concat(eng, wavs)
+        duration = len(wav) / eng.sample_rate
     else:
         # req.language ไม่ระบุ → ใช้ "language" จาก manifest ของ voice_id เอง ถ้ามี (เช่นเสียงลาว
         # ที่ language="Lao" เสมอ — ดู voices_lao/voices.json) กัน auto-detect ของโมเดลพลาดตอน
@@ -732,7 +778,7 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
         # ดูเหตุผลเต็มใน _generate_chunks รวมถึงการล็อกเสียงโหมดออกแบบเสียงข้ามก้อน
         # ห้ามขยายก้อนให้ใหญ่ (เคยลอง 350–600 ตัวอักษร เพื่อลดรอยต่อ) — ก้อนยาวทำให้เสียงช่วงท้าย
         # ก้อนเพี้ยนสะสม (autoregressive drift) ซึ่งเป็นเหตุผลที่ต้องตัดก้อนตั้งแต่แรก
-        chunks = chunk_text(text)
+        chunks = engine_chunks(eng, text)
         wavs = []
         async for w, _ in _generate_chunks(
             eng, chunks, clone_prompt=clone_prompt, instruct=instruct, language=lang,
@@ -741,14 +787,14 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
             verify=VERIFY_ASR,
         ):
             wavs.append(w)
-        wav = _concat_smooth(wavs)
-        duration = len(wav) / SAMPLE_RATE
+        wav = engine_concat(eng, wavs)
+        duration = len(wav) / eng.sample_rate
     gen_time = time.time() - t
     cost = charge(keyrec, duration, "tts")
     return TTSResponse(
         engine=eng.id, voice_id=req.voice_id, text=req.text,
-        audio_base64=b64(wav_bytes(wav)), duration=round(duration, 2),
-        generation_time=round(gen_time, 2), credits_charged=cost,
+        audio_base64=b64(wav_bytes(wav, eng.sample_rate)), duration=round(duration, 2),
+        generation_time=round(gen_time, 2), credits_charged=cost, sample_rate=eng.sample_rate,
     )
 
 
@@ -762,13 +808,16 @@ async def tts_stream(req: TTSRequest, keyrec=Depends(auth)):
     eng = get_engine(req.engine)
     if not req.voice_id and not req.instruct:
         raise HTTPException(422, "ต้องระบุ voice_id หรือ instruct")
-    instruct = clean_instruct(req.instruct)
+    instruct = engine_instruct(eng, req.instruct)
     clone_prompt = await resolve_clone_prompt(eng, req.voice_id, keyrec) if req.voice_id else None
-    text = transliterate_english(req.text) if req.transliterate_english else req.text
-    text = expand_maiyamok(text)
-    if req.normalize_numbers:
-        text = normalize_thai_numbers(text)
-    chunks = chunk_text(text)
+    native_mixed = getattr(eng, "native_mixed_language", False)
+    text = (transliterate_english(req.text)
+            if req.transliterate_english and not native_mixed else req.text)
+    if not native_mixed:  # VoxCPM2 อ่านตัวเลข/ไม้ยมกเองได้ถูก — แปลงก่อนทำให้ต่างจากผลที่ทดสอบไว้
+        text = expand_maiyamok(text)
+        if req.normalize_numbers:
+            text = normalize_thai_numbers(text)
+    chunks = engine_chunks(eng, text)
     # ดูคอมเมนต์เดียวกันใน /tts — fallback เป็น language ของ voice_id เอง (เช่นเสียงลาว) ถ้าไม่ระบุ
     lang = req.language or (eng.voices.get(req.voice_id, {}).get("meta", {}).get("language")
                             if req.voice_id else None)
@@ -783,7 +832,8 @@ async def tts_stream(req: TTSRequest, keyrec=Depends(auth)):
         ):
             total_dur += dur
             evt = {"index": i, "total": len(chunks), "text": chunks[i],
-                   "audio_base64": b64(wav_bytes(wav)), "duration": round(dur, 2)}
+                   "audio_base64": b64(wav_bytes(wav, eng.sample_rate)), "duration": round(dur, 2),
+                   "sample_rate": eng.sample_rate}
             yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
             i += 1
         cost = charge(keyrec, total_dur, "tts/stream")
@@ -927,8 +977,7 @@ async def clone(
                 print(f"[clone] enhance_ref ล้มเหลว (ใช้ไฟล์เดิม): {e}")
 
         def _clone_run():
-            with torch.no_grad():
-                prompt = eng.model.create_voice_clone_prompt(ref_audio=tmp_path, ref_text=ref_text)
+            prompt = eng.build_prompt(tmp_path, ref_text)
 
             from voice_similarity import embed_file, embed_array, cosine_sim
             ref_emb = embed_file(tmp_path)
@@ -939,8 +988,8 @@ async def clone(
                 wav, dur = eng._run(text, clone_prompt=prompt, language=language, speed=speed,
                                     num_step=num_step, guidance_scale=guidance_scale,
                                     class_temperature=_BEST_OF_CLASS_TEMPERATURE)
-                sim = cosine_sim(ref_emb, embed_array(wav, SAMPLE_RATE))
-                pitch_var = _pitch_variation(wav, SAMPLE_RATE)
+                sim = cosine_sim(ref_emb, embed_array(wav, eng.sample_rate))
+                pitch_var = _pitch_variation(wav, eng.sample_rate)
                 candidates.append((wav, dur, sim, pitch_var))
 
             pitch_vars = [c[3] for c in candidates]
@@ -965,7 +1014,7 @@ async def clone(
         os.remove(tmp_path)
 
     cost = charge(keyrec, duration, "clone")
-    return CloneResponse(text=text, audio_base64=b64(wav_bytes(wav)),
+    return CloneResponse(text=text, audio_base64=b64(wav_bytes(wav, eng.sample_rate)), sample_rate=eng.sample_rate,
                          duration=round(duration, 2), generation_time=round(gen_time, 2),
                          credits_charged=cost, similarity_score=round(sim_score, 4))
 
@@ -1055,7 +1104,8 @@ async def delete_voice(voice_id: str, keyrec=Depends(auth)):
     """ลบเสียงโคลนถาวร (เฉพาะเจ้าของ)"""
     if not library.delete(voice_id, owner_id(keyrec)):
         raise HTTPException(404, f"ไม่พบเสียง '{voice_id}' หรือไม่ใช่เจ้าของ")
-    ENGINES["omnivoice"].cache_drop(voice_id)
+    for _e in ENGINES.values():  # ทุกเอนจินมี prompt cache ของเสียงโคลนแยกกัน
+        _e.cache_drop(voice_id)
     return {"deleted": voice_id}
 
 
@@ -1112,12 +1162,12 @@ async def enhance_ep(
 
 
 # ── OpenAI-compatible endpoint ───────────────────────────────────────
-def _encode_audio(wav: np.ndarray, fmt: str):
+def _encode_audio(wav: np.ndarray, fmt: str, sr: int = SAMPLE_RATE):
     """แปลง wav float → bytes ตามฟอร์แมต OpenAI (คืน (bytes, content_type))"""
     fmt = (fmt or "wav").lower()
     if fmt in ("wav", "flac", "ogg"):
         buf = io.BytesIO()
-        sf.write(buf, wav, SAMPLE_RATE, format={"ogg": "OGG"}.get(fmt, fmt.upper()))
+        sf.write(buf, wav, sr, format={"ogg": "OGG"}.get(fmt, fmt.upper()))
         return buf.getvalue(), {"wav": "audio/wav", "flac": "audio/flac",
                                 "ogg": "audio/ogg"}[fmt]
     if fmt == "pcm":
@@ -1126,7 +1176,7 @@ def _encode_audio(wav: np.ndarray, fmt: str):
         try:
             from pydub import AudioSegment
             pcm = (np.clip(wav, -1, 1) * 32767).astype("<i2").tobytes()
-            seg = AudioSegment(pcm, frame_rate=SAMPLE_RATE, sample_width=2, channels=1)
+            seg = AudioSegment(pcm, frame_rate=sr, sample_width=2, channels=1)
             buf = io.BytesIO()
             seg.export(buf, format=fmt)
             return buf.getvalue(), {"mp3": "audio/mpeg", "opus": "audio/opus",
@@ -1137,7 +1187,7 @@ def _encode_audio(wav: np.ndarray, fmt: str):
 
 
 class OpenAISpeechRequest(BaseModel):
-    model: str = Field("hero-voice-1", description="ไม่ใช้จริง — เผื่อ compatibility")
+    model: str = Field("hero-voice-1", description="ชื่อเอนจิน (omnivoice/voxcpm2) ถ้าไม่ตรง → omnivoice")
     input: str = Field(..., min_length=1, description="ข้อความ")
     voice: str = Field(..., description="voice_id (สต็อก/โคลน)")
     response_format: str = Field("mp3", description="mp3/wav/flac/opus/aac/pcm")
@@ -1147,14 +1197,14 @@ class OpenAISpeechRequest(BaseModel):
 @app.post("/v1/audio/speech")
 async def openai_speech(req: OpenAISpeechRequest, keyrec=Depends(auth)):
     """เข้ากันได้กับ OpenAI TTS API — ให้ client ที่เขียนไว้คุยกับ OpenAI เปลี่ยนแค่ base URL"""
-    eng = get_engine("omnivoice")
+    eng = ENGINES.get(req.model) or get_engine("omnivoice")  # model="voxcpm2" → ใช้ VoxCPM2
     speed = min(max(req.speed, 0.31), 2.99)  # จำกัดตามช่วงที่โมเดลรับได้
     clone_prompt = await resolve_clone_prompt(eng, req.voice, keyrec)
     wav, duration = await _generate_serialized(
         eng._run, req.input, clone_prompt=clone_prompt, speed=speed,
     )
     charge(keyrec, duration, "v1/audio/speech")
-    data, ctype = _encode_audio(wav, req.response_format)
+    data, ctype = _encode_audio(wav, req.response_format, eng.sample_rate)
     return Response(content=data, media_type=ctype)
 
 

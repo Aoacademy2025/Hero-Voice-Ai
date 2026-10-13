@@ -35,7 +35,8 @@ if [ ! -x "$WS/venv/bin/python" ]; then
 fi
 source "$WS/venv/bin/activate"
 
-STAMP="$WS/venv/.installed-$(md5sum requirements.txt OmniVoice/pyproject.toml | md5sum | cut -c1-8)"
+# stamp รวม TTS_ENGINES ด้วย — เปิด voxcpm2 เพิ่มทีหลังบน venv เดิมจะติดตั้งให้ใหม่
+STAMP="$WS/venv/.installed-$( (cat requirements.txt OmniVoice/pyproject.toml; echo "$TTS_ENGINES") | md5sum | cut -c1-8)"
 if [ ! -f "$STAMP" ]; then
   echo "== pip install (ครั้งแรก / requirements เปลี่ยน) =="
   pip install -q --upgrade pip

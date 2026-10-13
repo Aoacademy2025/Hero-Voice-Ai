@@ -94,14 +94,21 @@ def ssh_endpoint(runpod, pod_id, timeout=600):
     raise TimeoutError("Pod ไม่พร้อม SSH ภายใน 10 นาที")
 
 
-def create_pod(runpod, gpu, volume_id):
+def create_pod(runpod, gpu, volume_id, image=None, env=None):
     pubkey = open(SSH_KEY + ".pub", encoding="utf-8").read().strip()
     last = None
     for g in ([gpu] if gpu else GPU_CANDIDATES):
         try:
-            kw = dict(name="herovoice-tts", image_name=IMAGE, gpu_type_id=g, cloud_type="ALL",
-                      container_disk_in_gb=40, ports="8000/http,22/tcp",
-                      env={"PUBLIC_KEY": pubkey}, support_public_ip=True, start_ssh=True)
+            if image:  # Docker image ของเราเอง (ไม่มี sshd) — ตั้งค่าทั้งหมดผ่าน env ตอนสร้าง Pod
+                kw = dict(name="herovoice-tts", image_name=image, gpu_type_id=g, cloud_type="ALL",
+                          container_disk_in_gb=30, ports="8000/http", env=env or {},
+                          support_public_ip=True, start_ssh=False)
+                if not volume_id:  # โมเดล ~8GB โหลดลง /workspace ตอนสตาร์ท — ให้มี pod volume รองรับ
+                    kw.update(volume_in_gb=30, volume_mount_path="/workspace")
+            else:
+                kw = dict(name="herovoice-tts", image_name=IMAGE, gpu_type_id=g, cloud_type="ALL",
+                          container_disk_in_gb=40, ports="8000/http,22/tcp",
+                          env={"PUBLIC_KEY": pubkey}, support_public_ip=True, start_ssh=True)
             if volume_id:
                 kw.update(network_volume_id=volume_id, volume_mount_path="/workspace")
             pod = runpod.create_pod(**kw)
@@ -130,7 +137,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--gpu"); ap.add_argument("--volume", help="Network Volume id (mount /workspace)")
     ap.add_argument("--tts-key", help="X-API-Key ของ server (ดีฟอลต์สุ่มให้)")
-    ap.add_argument("--engines", default="omnivoice")
+    ap.add_argument("--engines", default="omnivoice,voxcpm2", help="ดีฟอลต์เปิดทั้งสองเอนจิน (GPU 16GB+)")
+    ap.add_argument("--image", help="Docker image ที่ build แล้ว เช่น ghcr.io/aoacademy2025/hero-voice-ai:latest "
+                                    "(ไม่อัปโหลดโค้ด/ไม่ติดตั้ง — โมเดลโหลดตอนสตาร์ทลง /workspace)")
     ap.add_argument("--env", action="append", default=[], help="KEY=VAL เพิ่ม (ซ้ำได้)")
     ap.add_argument("--update", metavar="POD_ID", help="อัปโหลดโค้ดใหม่ + restart บน Pod เดิม")
     ap.add_argument("--status", action="store_true")
@@ -155,6 +164,25 @@ def main():
 
     tts_key = a.tts_key or ("sk_" + secrets.token_urlsafe(24))
     extra_env = dict(e.split("=", 1) for e in a.env)
+    if a.image:
+        env = {"TTS_API_KEY": tts_key, "TTS_ENGINES": a.engines, **extra_env}
+        pod_id = create_pod(runpod, a.gpu, a.volume, image=a.image, env=env)
+        url = pod_url(pod_id)
+        print(f"[pod] รอ server (pull image + โหลดโมเดลครั้งแรก ~5-15 นาที) {url}/health")
+        import urllib.request
+        t0 = time.time()
+        while time.time() - t0 < 1800:
+            try:
+                with urllib.request.urlopen(f"{url}/health", timeout=10) as r:
+                    if b'"ok"' in r.read():
+                        print(f"\nพร้อมใช้งาน ({time.time()-t0:.0f}s)\n  Studio/API : {url}\n  Swagger    : {url}/docs"
+                              f"\n  X-API-Key  : {tts_key}\n  Pod id     : {pod_id}")
+                        return
+            except Exception:
+                pass
+            time.sleep(15); print(f"[pod] waiting... {time.time()-t0:.0f}s", flush=True)
+        print(f"server ไม่ขึ้นใน 30 นาที — ดู log ที่ runpod.io/console/pods (Pod {pod_id}) แล้ว --terminate ถ้าไม่ใช้")
+        return
     build_zip()
     pod_id = a.update or create_pod(runpod, a.gpu, a.volume)
     ip, port = ssh_endpoint(runpod, pod_id)
