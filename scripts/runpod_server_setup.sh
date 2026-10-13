@@ -17,9 +17,16 @@ export TTS_VOICES_DB=${TTS_VOICES_DB:-$WS/custom_voices/voices.db}
 export TTS_CORS_ORIGINS=${TTS_CORS_ORIGINS:-*}
 export PYTHONIOENCODING=utf-8
 [ -n "$TTS_API_KEY" ] || { echo "ต้องตั้ง TTS_API_KEY ก่อน"; exit 1; }
+echo "$TTS_API_KEY" > "$WS/.tts_key"; chmod 600 "$WS/.tts_key"
 
 echo "== GPU =="; nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 python -c "import torch;print('torch',torch.__version__,'cuda',torch.cuda.is_available())"
+
+# ── ffmpeg/libsndfile (image PyTorch เปล่าไม่มี — pydub/librosa/audio_enhance ต้องใช้) ───────────
+if ! command -v ffmpeg >/dev/null; then
+  echo "== apt install ffmpeg =="
+  apt-get update -qq >/dev/null && apt-get install -y -qq ffmpeg libsndfile1 >/dev/null
+fi
 
 # ── venv บน volume (สืบทอด torch จาก image ด้วย --system-site-packages) ─────────────────
 if [ ! -x "$WS/venv/bin/python" ]; then
@@ -34,7 +41,7 @@ if [ ! -f "$STAMP" ]; then
   pip install -q --upgrade pip
   pip install -q -r requirements.txt
   pip install -q --no-deps ./OmniVoice
-  pip install -q accelerate pydub tensorboardX webdataset "huggingface_hub[cli]"
+  pip install -q accelerate pydub tensorboardX webdataset python-multipart huggingface_hub
   if [[ ",$TTS_ENGINES," == *",voxcpm2,"* ]]; then
     pip install -q --no-deps voxcpm==2.0.3
     pip install -q inflect wetext addict simplejson sortedcontainers einops

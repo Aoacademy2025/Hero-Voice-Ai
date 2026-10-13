@@ -14,6 +14,7 @@ pythainlp  # แปลงตัวเลข/จำนวนเงินเป็
 # API server
 fastapi
 uvicorn[standard]
+python-multipart  # FastAPI ใช้รับ multipart/form-data (อัปโหลดไฟล์ใน /clone, /transcribe, /voices)
 requests  # ใช้เรียก Gemini API ตอนเปิด TTS_GEMINI_TRANSLITERATE=1 (ดู gemini_translit.py) — เบามาก
 
 # วัดความคล้ายเสียง (speaker similarity) สำหรับ /clone best-of-N — ใช้ torch ที่มีอยู่แล้ว
