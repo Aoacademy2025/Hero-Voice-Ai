@@ -68,6 +68,7 @@ COPY scripts/ /app/scripts/
 COPY data/ /app/data/
 COPY voices/ /app/voices/
 COPY voices_lao/ /app/voices_lao/
+COPY voices_hero/ /app/voices_hero/
 RUN sed -i 's/\r$//' /app/scripts/*.sh && chmod +x /app/scripts/docker_entrypoint.sh
 
 # ทดสอบ import ทุกโมดูลที่ server/handler ใช้ตอน build — dependency พังให้ CI ล้มตรงนี้

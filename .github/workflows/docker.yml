@@ -7,7 +7,7 @@ name: docker
 on:
   push:
     branches: [main]
-    paths: [core/**, scripts/**, data/**, voices/**, voices_lao/**, OmniVoice/**, requirements.txt, Dockerfile, .github/workflows/docker.yml]
+    paths: [core/**, scripts/**, data/**, voices/**, voices_lao/**, voices_hero/**, OmniVoice/**, requirements.txt, Dockerfile, .github/workflows/docker.yml]
   workflow_dispatch:
 
 permissions:

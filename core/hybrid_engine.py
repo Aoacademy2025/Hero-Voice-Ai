@@ -26,6 +26,28 @@ DESIGN_REF_TEXT = os.environ.get(
     "วันนี้ท้องฟ้าแจ่มใส อากาศกำลังสบาย เหมาะกับการออกไปเดินเล่นริมแม่น้ำ แล้วแวะร้านกาแฟเล็กๆ ใกล้สะพานเก่า",
 )
 PROMPT_CACHE_SIZE = int(os.environ.get("TTS_PROMPT_CACHE_SIZE", "64"))
+# เสียงอ้างอิงเฉพาะเอนจินนี้ (แทนไฟล์ใน voices/) — VoxCPM2 ลอกบรรยากาศห้องจากไฟล์อ้างอิงด้วย
+# ไฟล์สต็อกบางตัวก้อง (เช่น voice_02) ผลจึงก้องตาม → สร้างไฟล์ที่แห้งกว่าไว้ใน voices_hero/
+HERO_REFS_DIR = os.environ.get("TTS_HERO_REFS_DIR",
+                               os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voices_hero"))
+
+
+def _with_hero_refs(voices):
+    """คืนสำเนารายการเสียงที่ชี้ไฟล์อ้างอิงไป voices_hero/ สำหรับเสียงที่มีไฟล์ใหม่ (ตัวอื่นคงเดิม)"""
+    manifest = os.path.join(HERO_REFS_DIR, "voices.json")
+    if not os.path.exists(manifest):
+        return voices
+    import json
+    with open(manifest, encoding="utf-8") as f:
+        overrides = {v["id"]: v for v in json.load(f)}
+    out = dict(voices)
+    for vid, o in overrides.items():
+        if vid in voices:
+            v = voices[vid]
+            out[vid] = dict(v, ref_audio=os.path.join(HERO_REFS_DIR, o["ref_audio"]),
+                            meta=dict(v["meta"], ref_text=o["ref_text"]))
+    print(f"[hero] เสียงอ้างอิงเฉพาะ hero: {sorted(o for o in overrides if o in voices)}", flush=True)
+    return out
 
 
 class HybridPrompt:
@@ -59,7 +81,7 @@ class HybridEngine:
     def __init__(self, omni, vox):
         self.omni, self.vox = omni, vox
         self.sample_rate = vox.sample_rate
-        self.voices = omni.voices                 # รายการเสียงของ OmniVoice
+        self.voices = _with_hero_refs(omni.voices)  # รายการเสียงของ OmniVoice (+ไฟล์อ้างอิงที่แห้งกว่าใน voices_hero/)
         self.native_mixed_language = vox.native_mixed_language
         self.chunk_max_chars = vox.chunk_max_chars
         self.split_lines = vox.split_lines
