@@ -37,6 +37,9 @@ CHUNK_GAP_S = float(os.environ.get("TTS_VOXCPM2_CHUNK_GAP", "0.45"))  # = ไฟ
 EDGE_PAD_S = 0.06
 CHUNK_MAX_CHARS = int(os.environ.get("TTS_VOXCPM2_CHUNK_MAX_CHARS", "200"))
 PROMPT_CACHE_SIZE = int(os.environ.get("TTS_PROMPT_CACHE_SIZE", "64"))
+# พยางค์สุดท้ายดังกว่าค่านี้ (เทียบช่วงดังของท่อน) = หยุดพูดกลางคำ → สร้างใหม่ (ปกติ -23..-47 dB)
+ABRUPT_END_DB = float(os.environ.get("TTS_VOXCPM2_ABRUPT_END_DB", "-15"))
+END_RETRIES = int(os.environ.get("TTS_VOXCPM2_END_RETRIES", "2"))
 # torch.compile: เร็วขึ้นมากบน Linux แต่ใช้ไม่ได้บน Windows (ไม่มี triton) — ดีฟอลต์เปิดเฉพาะ Linux
 OPTIMIZE = os.environ.get("TTS_VOXCPM2_OPTIMIZE", "0" if os.name == "nt" else "1") != "0"
 
@@ -74,15 +77,31 @@ def _trim_edges(x, sr, thr_db=-45.0, pad=EDGE_PAD_S):
     return x[max(0, idx[0] - p):min(len(x), idx[-1] + p)]
 
 
-def _fade(x, sr, ms=8):
-    n = min(len(x) // 2, int(sr * ms / 1000))
-    if n <= 0:
-        return x
+def _fade(x, sr, ms_in=8, ms_out=30):
+    """fade เข้า 8ms กันคลิก | fade ออก 30ms ให้ท้ายท่อนจางลงนุ่มขึ้น (เดิม 8ms ฟังเป็นตัดห้วน)"""
     x = x.copy()
-    ramp = np.linspace(0.0, 1.0, n, dtype=x.dtype)
-    x[:n] *= ramp
-    x[-n:] *= ramp[::-1]
+    n_in, n_out = min(len(x) // 2, int(sr * ms_in / 1000)), min(len(x) // 2, int(sr * ms_out / 1000))
+    if n_in > 0:
+        x[:n_in] *= np.linspace(0.0, 1.0, n_in, dtype=x.dtype)
+    if n_out > 0:
+        x[-n_out:] *= np.linspace(1.0, 0.0, n_out, dtype=x.dtype)
     return x
+
+
+def _end_level_db(x, sr):
+    """ระดับเสียงพยางค์สุดท้าย (30ms ก่อนเข้าช่วงเงียบท้ายท่อน) เทียบกับช่วงดังของท่อน (dB)
+    ท่อนปกติจางลงก่อนเงียบ: -23 ถึง -47 dB (วัดจากไฟล์ที่ผู้ใช้อนุมัติ) | ตัดห้วน ("ปัดทิ้ง"): -9 dB
+    โมเดลจะต่อท้ายด้วยความเงียบเสมอ อาการนี้จึงเป็นการหยุดพูดกลางคำ ไม่ใช่เสียงขาดท้ายไฟล์"""
+    h = max(1, int(sr * 0.005)); n = len(x) // h
+    if n < 20:
+        return -99.0
+    db = 20 * np.log10(np.sqrt(np.mean(x[: n * h].reshape(n, h) ** 2, axis=1)) + 1e-9)
+    peak = np.percentile(db, 99)
+    loud = np.where(db > peak - 45)[0]
+    if len(loud) == 0:
+        return -99.0
+    last = loud[-1]
+    return float(np.mean(db[max(0, last - 5): last + 1]) - peak)
 
 
 def _has_non_ascii_letters(s):
@@ -210,14 +229,24 @@ class VoxCPM2Engine:
                 target = f"({instruct}){text}"
         # num_step ของ OmniVoice (ดีฟอลต์ 32) → inference_timesteps ของ VoxCPM2 (ดีฟอลต์ 10)
         steps = max(4, min(30, round(num_step * 10 / 32)))
-        with torch.no_grad():
-            wav_t, _, _ = self.tts.generate_with_prompt_cache(
-                target_text=target, prompt_cache=clone_prompt,
-                inference_timesteps=steps, cfg_value=guidance_scale or 2.0,
-                retry_badcase=True,
-            )
-        wav = wav_t.squeeze().float().cpu().numpy().astype(np.float32)
-        wav = _trim_edges(wav, NATIVE_SR)
+        # บางรอบโมเดลหยุดสร้างเสียงก่อนคำสุดท้ายจางเอง (เช่น "ปัดทิ้ง" ดังอยู่ -8 dB แล้วหายใน 5ms)
+        # → สร้างใหม่ได้อีก END_RETRIES รอบ เลือกรอบที่ท้ายเบาที่สุด
+        best = None
+        for attempt in range(1 + END_RETRIES):
+            with torch.no_grad():
+                wav_t, _, _ = self.tts.generate_with_prompt_cache(
+                    target_text=target, prompt_cache=clone_prompt,
+                    inference_timesteps=steps, cfg_value=guidance_scale or 2.0,
+                    retry_badcase=True,
+                )
+            cand = _trim_edges(wav_t.squeeze().float().cpu().numpy().astype(np.float32), NATIVE_SR)
+            end_db = _end_level_db(cand, NATIVE_SR)
+            if best is None or end_db < best[0]:
+                best = (end_db, cand)
+            if end_db <= ABRUPT_END_DB:
+                break
+            print(f"[voxcpm2] ท้ายท่อนตัดห้วน ({end_db:.0f} dB) รอบ {attempt + 1}/{1 + END_RETRIES} → สร้างใหม่", flush=True)
+        wav = best[1]
         if abs(speed - 1.0) > 0.05:
             import librosa
             wav = librosa.effects.time_stretch(wav, rate=float(speed))
