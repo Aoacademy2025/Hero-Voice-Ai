@@ -26,6 +26,7 @@ import base64
 import io
 import json
 import os
+import re
 import tempfile
 import threading
 import time
@@ -371,6 +372,12 @@ def engine_chunks(eng, text):
     return out or chunk_text(text, max_chars=mx)
 
 
+def engine_postprocess(eng, wav, prompt):
+    """ขั้นสุดท้ายหลังต่อท่อน (เช่น ลดก้องเสียงนภาใน hero) — เอนจินที่ไม่มีขั้นนี้คืนเสียงเดิม"""
+    post = getattr(eng, "postprocess", None)
+    return post(wav, prompt) if post else wav
+
+
 def engine_concat(eng, wavs):
     """แต่ละเอนจินต่อก้อนต่างกัน: OmniVoice crossfade (ขอบมี pad 0.1s), VoxCPM2 เว้นช่องว่างคงที่"""
     concat = getattr(eng, "concat", None)
@@ -573,13 +580,50 @@ def _asr_match(wav, text: str, sr: int = SAMPLE_RATE) -> Optional[float]:
         path = f.name
     try:
         sf.write(path, wav, sr)
-        hyp = norm(asr_engine.transcribe(path))
+        raw = asr_engine.transcribe(path)
+        hyp = norm(raw)
     finally:
         try:
             os.unlink(path)
         except OSError:
             pass
-    return difflib.SequenceMatcher(None, ref, hyp).ratio()
+    ratio = difflib.SequenceMatcher(None, ref, hyp, autojunk=False).ratio()
+    junk = _foreign_babble(text, raw)
+    if junk:
+        # ตัวเทียบข้างบนดูแค่ตัวอักษรไทย เสียงพูดภาษาอื่นที่โมเดลแทรกมาเองจึงหลุดผ่าน — บังคับให้สร้างใหม่
+        print(f"[verify] พบเสียงแปลกปลอม {junk!r} → ให้สร้างท่อนนี้ใหม่", flush=True)
+        ratio = min(ratio, 0.5)
+    return ratio
+
+
+_LATIN_DIACRITIC = re.compile(r"[À-ɏḀ-ỿ]")   # ตัวอักษรละตินมีวรรณยุกต์ (เวียดนาม ฯลฯ)
+_LATIN_WORD = re.compile(r"[A-Za-zÀ-ɏḀ-ỿ']+")
+
+
+def _foreign_babble(text: str, asr_text: str) -> Optional[str]:
+    """คืนข้อความส่วนที่น่าจะเป็นเสียงแปลกปลอม หรือ None
+    เคยเจอจริงบน VoxCPM2: แทรก "Now, let me take you a try." และ "Rong người sắp nhận" กลางสคริปต์ไทย
+    - คำละตินมีวรรณยุกต์ (เวียดนาม) ≥ 2 คำ ทั้งที่ต้นฉบับไม่มี
+    - คำอังกฤษติดกัน ≥ 3 คำที่ไม่มีในต้นฉบับ (คำทับศัพท์ไทย เช่น ครีเอเตอร์ → Creator ถูกถอดเป็นอังกฤษได้
+      แต่จะมาทีละ 1-2 คำ ไม่ใช่ประโยค)"""
+    src_words = {w.lower() for w in _LATIN_WORD.findall(text)}
+    if not _LATIN_DIACRITIC.search(text):
+        viet = [w for w in _LATIN_WORD.findall(asr_text) if _LATIN_DIACRITIC.search(w)]
+        if len(viet) >= 2:
+            return " ".join(viet)
+    run = []
+    for tok in re.split(r"(?<=[A-Za-z'])(?=[^A-Za-z'])|(?<=[^A-Za-z'])(?=[A-Za-z'])", asr_text):
+        tok = tok.strip(" ,.!?")
+        if not tok:
+            continue
+        if re.fullmatch(r"[A-Za-z']+(?:[ ,.!?]+[A-Za-z']+)*", tok):
+            words = [w for w in re.findall(r"[A-Za-z']+", tok) if w.lower() not in src_words]
+            run.extend(words)
+            if len(run) >= 3:
+                return " ".join(run)
+        else:
+            run = []
+    return None
 
 
 # ตรวจทุกก้อนหลัง generate ด้วย _asr_match แล้วสร้างซ้ำถ้าอ่านไม่ตรง (ใช้ใน /tts เท่านั้น —
@@ -785,7 +829,7 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
             verify=VERIFY_ASR,
         ):
             wavs.append(w)
-        wav = engine_concat(eng, wavs)
+        wav = engine_postprocess(eng, engine_concat(eng, wavs), clone_prompt)
         duration = len(wav) / eng.sample_rate
     else:
         # req.language ไม่ระบุ → ใช้ "language" จาก manifest ของ voice_id เอง ถ้ามี (เช่นเสียงลาว
@@ -806,7 +850,7 @@ async def tts(req: TTSRequest, keyrec=Depends(auth)):
             verify=VERIFY_ASR,
         ):
             wavs.append(w)
-        wav = engine_concat(eng, wavs)
+        wav = engine_postprocess(eng, engine_concat(eng, wavs), clone_prompt)
         duration = len(wav) / eng.sample_rate
     gen_time = time.time() - t
     cost = charge(keyrec, duration, "tts")
@@ -852,6 +896,7 @@ async def tts_stream(req: TTSRequest, keyrec=Depends(auth)):
             guidance_scale=req.guidance_scale, class_temperature=req.class_temperature,
         ):
             total_dur += dur
+            wav = engine_postprocess(eng, wav, clone_prompt)  # stream: ทีละท่อน (ได้ผลน้อยกว่าทั้งไฟล์)
             evt = {"index": i, "total": len(chunks), "text": chunks[i],
                    "audio_base64": b64(wav_bytes(wav, eng.sample_rate)), "duration": round(dur, 2),
                    "sample_rate": eng.sample_rate}
@@ -1224,6 +1269,7 @@ async def openai_speech(req: OpenAISpeechRequest, keyrec=Depends(auth)):
     wav, duration = await _generate_serialized(
         eng._run, req.input, clone_prompt=clone_prompt, speed=speed,
     )
+    wav = engine_postprocess(eng, wav, clone_prompt)
     charge(keyrec, duration, "v1/audio/speech")
     data, ctype = _encode_audio(wav, req.response_format, eng.sample_rate)
     return Response(content=data, media_type=ctype)

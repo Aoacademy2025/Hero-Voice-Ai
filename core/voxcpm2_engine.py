@@ -57,7 +57,8 @@ def _load_file_memmap(path, *a, **k):
             continue
         npdt, view = dts[info["dtype"]]
         s0, s1 = info["data_offsets"]
-        t = torch.from_numpy(np.frombuffer(mm[s0:s1], dtype=npdt).reshape(info["shape"]).copy())
+        # ไม่ copy: ชี้ไปที่ไฟล์ตรงๆ ลด RAM สูงสุดตอนโหลดราวครึ่งหนึ่ง (load_state_dict อ่านอย่างเดียว)
+        t = torch.from_numpy(np.frombuffer(mm[s0:s1], dtype=npdt).reshape(info["shape"]))
         out[name] = t.view(view) if view else t
     return out
 
@@ -188,9 +189,11 @@ class VoxCPM2Engine:
 
     # ── generate ──
     def _run(self, text, *, voice_id=None, clone_prompt=None, instruct=None, language=None,
-             speed=1.0, num_step=32, guidance_scale=None, class_temperature=None):
+             speed=1.0, num_step=32, guidance_scale=None, class_temperature=None,
+             apply_watermark=True):
         """generate หนึ่งก้อน (blocking) → (wav float32 @ self.sample_rate, duration_sec)
-        language/class_temperature ไม่ใช้ (VoxCPM2 ตรวจภาษาเอง, ไม่มี class sampling)"""
+        language/class_temperature ไม่ใช้ (VoxCPM2 ตรวจภาษาเอง, ไม่มี class sampling)
+        apply_watermark=False: ผู้เรียกจะฝังลายน้ำเองหลังประมวลผลต่อ (เช่นลดก้องทั้งไฟล์ — ดู hybrid_engine)"""
         if clone_prompt is None and voice_id is not None:
             v = self.voices[voice_id]
             clone_prompt = self.cache_get(voice_id)
@@ -224,7 +227,8 @@ class VoxCPM2Engine:
         if self._tighten is not None:
             wav = self._tighten(wav, self.sample_rate)
         wav = _fade(wav, self.sample_rate)
-        wav = watermark.apply(wav, self.sample_rate)
+        if apply_watermark:
+            wav = watermark.apply(wav, self.sample_rate)
         return wav, len(wav) / self.sample_rate
 
     def concat(self, wavs):

@@ -36,7 +36,7 @@ import time
 import numpy as np
 
 from server import (ENGINES, DEFAULT_ENGINE, load_engines, engine_instruct, engine_chunks,
-                    engine_concat, _asr_match, VERIFY_ASR, VERIFY_MIN_RATIO, VERIFY_MAX_TRIES,
+                    engine_concat, engine_postprocess, _asr_match, VERIFY_ASR, VERIFY_MIN_RATIO, VERIFY_MAX_TRIES,
                     _CLONE_BEST_OF, _BEST_OF_CLASS_TEMPERATURE, wav_bytes, b64)
 from text_utils import expand_maiyamok, normalize_thai_numbers, split_by_language, transliterate_english
 
@@ -146,6 +146,7 @@ def _do_tts(inp: dict) -> dict:
         chunks = engine_chunks(eng, text)
         langs = [language] * len(chunks)
     wav = _generate(eng, chunks, langs, prompt, instruct, speed, num_step, guidance_scale)
+    wav = engine_postprocess(eng, wav, prompt)  # ลดก้องเฉพาะเสียงที่ตั้งไว้ (เช่นนภา) แล้วฝังลายน้ำ
     gen_time = time.time() - t
     audio, fmt = _encode(wav, eng.sample_rate, inp.get("format"))
     return {

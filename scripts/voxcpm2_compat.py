@@ -22,7 +22,8 @@ def load_file_memmap(path, *a, **k):
             continue
         npdt, tview = _DT[info["dtype"]]
         s0, s1 = info["data_offsets"]
-        arr = np.frombuffer(mm[s0:s1], dtype=npdt).reshape(info["shape"]).copy()
+        # ไม่ copy: tensor ชี้ไปที่ไฟล์ (memmap) ตรงๆ — RAM ไม่ถูกจองซ้ำ 4.6GB (load_state_dict อ่านอย่างเดียว)
+        arr = np.frombuffer(mm[s0:s1], dtype=npdt).reshape(info["shape"])
         t = torch.from_numpy(arr)
         out[name] = t.view(tview) if tview else t
     return out

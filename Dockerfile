@@ -31,7 +31,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ซึ่งจะติดตั้ง torch ทับ (ABI ไม่ตรง) และดึงของหนักที่ server ไม่ได้ใช้
 COPY OmniVoice/ /app/OmniVoice/
 RUN pip install --no-cache-dir --no-deps /app/OmniVoice \
-    && pip install --no-cache-dir accelerate pydub tensorboardX webdataset python-multipart huggingface_hub runpod
+    && pip install --no-cache-dir accelerate pydub tensorboardX webdataset python-multipart huggingface_hub runpod nara_wpe
 
 ARG WITH_VOXCPM2=1
 RUN if [ "$WITH_VOXCPM2" = "1" ]; then \
@@ -74,7 +74,7 @@ RUN sed -i 's/\r$//' /app/scripts/*.sh && chmod +x /app/scripts/docker_entrypoin
 # ทดสอบ import ทุกโมดูลที่ server/handler ใช้ตอน build — dependency พังให้ CI ล้มตรงนี้
 # (เคยพังบน RunPod Serverless: transformers import GenerationMixin ไม่ผ่านกับ torch 2.5.1)
 RUN cd /app/core && python -c "import transformers; from transformers import AutoFeatureExtractor, GenerationMixin; \
-import omnivoice, voxcpm, faster_whisper, runpod, server, hybrid_engine, voxcpm2_engine; \
+import omnivoice, voxcpm, faster_whisper, runpod, nara_wpe, server, hybrid_engine, voxcpm2_engine, dereverb; \
 print('import check ok: torch', __import__('torch').__version__, 'transformers', transformers.__version__)"
 
 EXPOSE 8000

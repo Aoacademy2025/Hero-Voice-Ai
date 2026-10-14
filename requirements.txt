@@ -29,6 +29,9 @@ faster-whisper
 # ปิดได้ด้วย env TTS_ENABLE_WATERMARK=0 ถ้าไม่ต้องการ / ยังไม่พร้อมติดตั้ง
 audioseal
 
+# ลดเสียงก้องหลังสร้าง (WPE) — เปิดต่อเสียงใน voices_hero/voices.json "dereverb_taps" (ดู core/dereverb.py)
+nara_wpe
+
 # ลดเสียงรบกวนพื้นหลัง/เพิ่มความชัด (ดู audio_enhance.py, /enhance endpoint, enhance_ref
 # param ใน /clone และ /voices) — ไม่ติดตั้งก็ยังใช้ endpoint อื่นได้ปกติ (fallback แบบไม่แก้เสียง)
 demucs

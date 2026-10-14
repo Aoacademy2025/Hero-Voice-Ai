@@ -20,6 +20,8 @@ from collections import OrderedDict
 import numpy as np
 import soundfile as sf
 
+import watermark
+
 # ประโยคกลางๆ (ไม่มีคำลงท้ายเพศ) ยาว ~5-7 วินาที — ใช้ให้ OmniVoice สร้างตัวอย่างเสียงจาก instruct
 DESIGN_REF_TEXT = os.environ.get(
     "TTS_HERO_DESIGN_REF_TEXT",
@@ -33,30 +35,35 @@ HERO_REFS_DIR = os.environ.get("TTS_HERO_REFS_DIR",
 
 
 def _with_hero_refs(voices):
-    """คืนสำเนารายการเสียงที่ชี้ไฟล์อ้างอิงไป voices_hero/ สำหรับเสียงที่มีไฟล์ใหม่ (ตัวอื่นคงเดิม)"""
+    """คืน (สำเนารายการเสียงที่ชี้ไฟล์อ้างอิงไป voices_hero/, {ไฟล์อ้างอิง: taps ลดก้อง})
+    เสียงที่ไม่มีใน voices_hero/ คงเดิม | "dereverb_taps" ใน manifest = ลดก้องทั้งไฟล์หลังต่อท่อน (0 = ไม่ลด)"""
     manifest = os.path.join(HERO_REFS_DIR, "voices.json")
     if not os.path.exists(manifest):
-        return voices
+        return voices, {}
     import json
     with open(manifest, encoding="utf-8") as f:
         overrides = {v["id"]: v for v in json.load(f)}
-    out = dict(voices)
+    out, dereverb = dict(voices), {}
     for vid, o in overrides.items():
         if vid in voices:
             v = voices[vid]
-            out[vid] = dict(v, ref_audio=os.path.join(HERO_REFS_DIR, o["ref_audio"]),
-                            meta=dict(v["meta"], ref_text=o["ref_text"]))
-    print(f"[hero] เสียงอ้างอิงเฉพาะ hero: {sorted(o for o in overrides if o in voices)}", flush=True)
-    return out
+            ref = os.path.join(HERO_REFS_DIR, o["ref_audio"])
+            out[vid] = dict(v, ref_audio=ref, meta=dict(v["meta"], ref_text=o["ref_text"]))
+            if int(o.get("dereverb_taps", 0)) > 0:
+                dereverb[ref] = int(o["dereverb_taps"])
+    print(f"[hero] เสียงอ้างอิงเฉพาะ hero: {sorted(o for o in overrides if o in voices)}"
+          f" | ลดก้อง: {sorted(vid for vid, o in overrides.items() if int(o.get('dereverb_taps', 0)) > 0)}", flush=True)
+    return out, dereverb
 
 
 class HybridPrompt:
     """prompt ของ VoxCPM2 + เสียงต้นทาง (ไฟล์อ้างอิงหรือ wav) ไว้สร้าง prompt ของ OmniVoice ตอนต้องสำรอง"""
-    __slots__ = ("vox", "ref_path", "ref_text", "wav", "wav_sr", "_omni")
+    __slots__ = ("vox", "ref_path", "ref_text", "wav", "wav_sr", "_omni", "dereverb")
 
-    def __init__(self, vox, ref_path=None, ref_text=None, wav=None, wav_sr=None):
+    def __init__(self, vox, ref_path=None, ref_text=None, wav=None, wav_sr=None, dereverb=0):
         self.vox, self.ref_path, self.ref_text = vox, ref_path, ref_text
         self.wav, self.wav_sr, self._omni = wav, wav_sr, None
+        self.dereverb = dereverb  # taps ของ WPE ที่ใช้หลังต่อท่อน (0 = ไม่ลดก้อง)
 
     def omni_prompt(self, omni):
         if self._omni is None:
@@ -81,7 +88,8 @@ class HybridEngine:
     def __init__(self, omni, vox):
         self.omni, self.vox = omni, vox
         self.sample_rate = vox.sample_rate
-        self.voices = _with_hero_refs(omni.voices)  # รายการเสียงของ OmniVoice (+ไฟล์อ้างอิงที่แห้งกว่าใน voices_hero/)
+        # รายการเสียงของ OmniVoice (+ไฟล์อ้างอิงที่แห้งกว่า และค่าลดก้องต่อเสียง จาก voices_hero/)
+        self.voices, self._dereverb = _with_hero_refs(omni.voices)
         self.native_mixed_language = vox.native_mixed_language
         self.chunk_max_chars = vox.chunk_max_chars
         self.split_lines = vox.split_lines
@@ -93,7 +101,8 @@ class HybridEngine:
         return self.omni.list_voices(language=language)
 
     def build_prompt(self, ref_path, ref_text):
-        return HybridPrompt(self.vox.build_prompt(ref_path, ref_text), ref_path=ref_path, ref_text=ref_text)
+        return HybridPrompt(self.vox.build_prompt(ref_path, ref_text), ref_path=ref_path, ref_text=ref_text,
+                            dereverb=self._dereverb.get(ref_path, 0))
 
     def build_prompt_from_wav(self, wav, ref_text):
         return HybridPrompt(self.vox.build_prompt_from_wav(wav, ref_text), ref_text=ref_text,
@@ -119,6 +128,15 @@ class HybridEngine:
 
     def concat(self, wavs):
         return self.vox.concat(wavs)
+
+    def postprocess(self, wav, prompt):
+        """หลังต่อทุกท่อนแล้ว: ลดก้อง (เฉพาะเสียงที่ตั้งไว้ใน voices_hero/) แล้วฝังลายน้ำครั้งเดียว
+        ลดก้องทั้งไฟล์ ไม่ใช่ทีละท่อน — WPE ได้ผลดีกับเสียงยาว (ผู้ใช้ฟังเทียบแล้วเลือกแบบนี้)"""
+        taps = getattr(prompt, "dereverb", 0) if prompt is not None else 0
+        if not taps:
+            return wav
+        import dereverb
+        return watermark.apply(dereverb.apply(wav, self.sample_rate, taps=taps), self.sample_rate)
 
     def transcribe(self, audio_path):
         return self.vox.transcribe(audio_path)
@@ -164,8 +182,10 @@ class HybridEngine:
              speed=1.0, num_step=32, guidance_scale=None, class_temperature=None):
         prompt = self._resolve(voice_id, clone_prompt, instruct)
         try:
+            # เสียงที่ต้องลดก้อง: ยังไม่ฝังลายน้ำตอนนี้ — ฝังครั้งเดียวหลังลดก้องใน postprocess()
             return self.vox._run(text, clone_prompt=prompt.vox if prompt else None,
-                                 speed=speed, num_step=num_step, guidance_scale=guidance_scale)
+                                 speed=speed, num_step=num_step, guidance_scale=guidance_scale,
+                                 apply_watermark=not (prompt and prompt.dereverb))
         except Exception as e:
             if prompt is None:
                 raise
