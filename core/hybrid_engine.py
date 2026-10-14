@@ -20,7 +20,6 @@ from collections import OrderedDict
 import numpy as np
 import soundfile as sf
 
-import watermark
 
 # ประโยคกลางๆ (ไม่มีคำลงท้ายเพศ) ยาว ~5-7 วินาที — ใช้ให้ OmniVoice สร้างตัวอย่างเสียงจาก instruct
 DESIGN_REF_TEXT = os.environ.get(
@@ -130,13 +129,14 @@ class HybridEngine:
         return self.vox.concat(wavs)
 
     def postprocess(self, wav, prompt):
-        """หลังต่อทุกท่อนแล้ว: ลดก้อง (เฉพาะเสียงที่ตั้งไว้ใน voices_hero/) แล้วฝังลายน้ำครั้งเดียว
-        ลดก้องทั้งไฟล์ ไม่ใช่ทีละท่อน — WPE ได้ผลดีกับเสียงยาว (ผู้ใช้ฟังเทียบแล้วเลือกแบบนี้)"""
+        """หลังต่อทุกท่อนแล้ว: ลดก้องทั้งไฟล์ (เฉพาะเสียงที่ตั้งไว้ใน voices_hero/)
+        ทำตามไฟล์ที่ผู้ใช้อนุมัติทุกขั้น: เสียงที่ฝังลายน้ำรายท่อนแล้ว → ต่อท่อน → WPE ทั้งไฟล์ → จบ
+        ข้อแลก: WPE ลบลายน้ำออกบางส่วน การตรวจย้อนหลังว่าไฟล์มาจากระบบเราจะแม่นน้อยลงสำหรับเสียงเหล่านี้"""
         taps = getattr(prompt, "dereverb", 0) if prompt is not None else 0
         if not taps:
             return wav
         import dereverb
-        return watermark.apply(dereverb.apply(wav, self.sample_rate, taps=taps), self.sample_rate)
+        return dereverb.apply(wav, self.sample_rate, taps=taps)
 
     def transcribe(self, audio_path):
         return self.vox.transcribe(audio_path)
@@ -182,10 +182,10 @@ class HybridEngine:
              speed=1.0, num_step=32, guidance_scale=None, class_temperature=None):
         prompt = self._resolve(voice_id, clone_prompt, instruct)
         try:
-            # เสียงที่ต้องลดก้อง: ยังไม่ฝังลายน้ำตอนนี้ — ฝังครั้งเดียวหลังลดก้องใน postprocess()
+            # ฝังลายน้ำทีละท่อนเสมอ แล้วค่อยลดก้องทั้งไฟล์ใน postprocess() — ลำดับเดียวกับไฟล์ที่ทำมือ
+            # ซึ่งผู้ใช้อนุมัติว่าไม่ก้อง (ลองแบบลดก้องก่อนแล้วฝังลายน้ำทีหลัง ผู้ใช้ยังได้ยินก้อง)
             return self.vox._run(text, clone_prompt=prompt.vox if prompt else None,
-                                 speed=speed, num_step=num_step, guidance_scale=guidance_scale,
-                                 apply_watermark=not (prompt and prompt.dereverb))
+                                 speed=speed, num_step=num_step, guidance_scale=guidance_scale)
         except Exception as e:
             if prompt is None:
                 raise
